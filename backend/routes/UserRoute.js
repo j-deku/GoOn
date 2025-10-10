@@ -1,0 +1,85 @@
+import express from "express";
+import { body } from "express-validator";
+import passport from "../config/passport.js";
+import dotenv from "dotenv";
+dotenv.config();
+import rateLimit from "express-rate-limit";
+import {
+  loginUser,
+  registerUser,
+  resendOTP,
+  verifyOTP,
+  googleAuthCallback,
+  placesApi,
+  forgotPassword,
+  resetPassword,
+  updateFCMToken,
+  deleteFCMToken,
+  userTokenRefresh,
+  userLogout,
+  getUserProfile,
+  subscribeToGlobalUpdates,
+} from "../controllers/UserController.js";
+import authMiddleware from "../middlewares/auth.js";
+import { cancelBooking } from "../controllers/BookingController.js";
+
+const UserRouter = express.Router();
+
+// Rate limiting
+const otpLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  message: "Too many OTP attempts. Please try again later.",
+});
+
+// Validation schemas
+const validateRegister = [
+  body("name").notEmpty().withMessage("Name is required"),
+  body("email").isEmail().withMessage("Invalid email format"),
+  body("password")
+    .isLength({ min: 8 })
+    .withMessage("Password must be at least 8 characters long"),
+];
+
+const validateLogin = [
+  body("email").isEmail().withMessage("Invalid email format"),
+  body("password").notEmpty().withMessage("Password is required"),
+];
+
+const validateOTP = [
+  body("userId").notEmpty().withMessage("User ID is required"),
+  body("otp").isNumeric().withMessage("Invalid OTP"),
+];
+
+// Routes
+
+UserRouter.post("/register", validateRegister, registerUser);
+UserRouter.post("/login", validateLogin, loginUser);
+UserRouter.post("/verify-otp", otpLimiter, validateOTP, verifyOTP);
+UserRouter.post("/resend-otp", otpLimiter, resendOTP);
+UserRouter.post("/forgot-password", forgotPassword);
+UserRouter.post("/reset-password/:token", resetPassword);
+
+UserRouter.get("/autoComplete", placesApi);
+// Google OAuth routes
+UserRouter.get("/google", passport.authenticate("google", { scope: ["profile", "email"] }));
+
+UserRouter.post("/google/callback",passport.authenticate("google", {
+    failureRedirect:`${process.env.FRONTEND_URL}/login?error=google_auth_failed`,
+  }),
+  googleAuthCallback
+);
+UserRouter.post("/refresh-token", userTokenRefresh);
+
+UserRouter.use(authMiddleware); 
+
+UserRouter.post("/subscribe-global", subscribeToGlobalUpdates);
+
+UserRouter.post("/update-token", updateFCMToken);
+UserRouter.post("/delete-token", deleteFCMToken);
+UserRouter.post("/logout", userLogout);
+UserRouter.get("/me", getUserProfile); 
+UserRouter.post("/:bookingId/cancel", cancelBooking);
+
+
+export default UserRouter;

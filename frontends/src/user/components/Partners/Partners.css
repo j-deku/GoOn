@@ -1,0 +1,260 @@
+.partners{
+    place-self: center;
+    width: 100%;
+}
+.partners h2{
+    color: #333;
+    font-size: 42px;
+    font-weight: bold;
+}
+.partners .container{
+    width: 100%;
+    text-align: center;
+    place-self: center;
+    align-items: center;
+    display: flex;
+    box-shadow: none;
+    background-color: transparent;
+}
+.partners .container img{
+    width: 50%;
+    border-radius: 30px;
+}
+.container .container2{
+    background-color:  #47433c;
+    padding: 20px;
+    height: 430px;
+    border-radius: 50px;
+    margin-left: -80px;
+    margin-right: 50px;
+}
+.container2 p{
+    color: white;
+    font-family: "poppins", arial;
+    font-size: 24px;
+}
+.container2 b{
+    font-size: 50px;
+    color: white;
+}
+.container2 button{
+    background-color: transparent;
+    outline: 1px solid whitesmoke;
+    color:white;
+    width: 90%;
+    border: none;
+    padding: 10px;
+    height: 20%;
+    border-radius: 30px;
+    font-size: 24px;
+    font-weight: bold;
+    cursor: pointer;
+    &:hover{
+        background-color:rgba(12, 132, 168, 0.2);
+    }
+}
+.container3 p{
+    font-size: 24px;
+    padding: 20px;
+    font-family: "poppins", arial;
+}
+.container3 b{
+    font-size: 40px;
+    color: #333;
+}
+.container4 p{
+    font-size: 24px;
+    padding: 20px;
+    padding-left: 40px;
+    font-family: "poppins", arial;
+    margin-left: -60px;
+    margin-right: 50px;
+    background-color: rgb(250, 250, 233);
+    border-radius: 40px;
+    height: 380px;
+}
+.partners .stroke-container{
+    display: none;
+    margin-top: -120px;
+}
+.partners .circle0{
+    min-height: 20px;
+    min-width: 20px;
+    background-color:transparent;
+    outline: 1px solid rgb(161, 161, 161);
+    border-radius: 50%;
+    align-items: center;
+    place-self: center;
+}
+.partners .circle{
+    min-height: 20px;
+    min-width: 20px;
+    background-color:#364e66;
+    border-radius: 50%;
+    align-items: center;
+    place-self: center;
+}.partners .stroke{
+    min-height: 100px;
+    min-width: 1px;
+    background-color:rgb(150, 149, 149);
+    align-items: center;
+    place-self: center;
+}
+.container .container4 b:first-child{
+    color:rgba(21, 98, 175, 0.8);
+}
+.partners .containerBg{
+    background: url('/Inside-car3.jpg');
+    position: relative;
+    height: 40vh;
+    background-position: center center;
+    padding: 20px;
+    background-repeat: no-repeat;
+    background-size: cover;
+    width: 100%;
+    border-radius: 30px;
+    display: flex;
+    transition: all 0.3s;
+}
+.containerBg .container5{
+    background-color:  rgba(10, 50, 63, 80);
+    padding: 20px 40px;
+    text-align: start;
+    border-radius: 30px;
+    height: fit-content;
+    width: 400px;
+    position:absolute;
+    right: 20px;
+}
+.container5 p{
+    color: white;
+    font-family: "poppins", arial;
+    font-size: 13px;
+    line-height: 1.3;
+    word-spacing:1px;
+}
+.container5 b{
+    font-size: 35px;
+    color: white;
+}
+.container5 button{
+    background-color: white;
+    color:black;
+    border: none;
+    padding: 10px 20px;
+    height: 20%;
+    border-radius: 30px;
+    font-size: 24px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s;
+    &:hover{
+        background-color:rgba(12, 132, 168, 0.2);
+        color: white;
+    }
+}
+
+@media (max-width:750px) {
+    .partners h2{
+        margin-bottom: -20%;
+        font-size: 30px;
+    }
+    .partners .container{
+        width: 90%;
+        display: flex;
+        flex-direction: column;
+    }
+    .partners .container img{
+        width: 130%;
+        border-radius: 20px;
+    }
+    .container .container2{
+        height: 100%;
+        width: 130%;
+        border-radius: 30px;
+        margin-left: 0;
+        margin-right: 0;
+        margin-top: -40px;
+    }
+    .container .container2 p{
+        font-size: 16px;
+        padding: 10px;
+        text-align: start;
+        word-spacing: -1px;
+        line-height: 20px;
+    }
+    .container2 b{
+        font-size: 25px;
+    }
+   .container2 button{
+        background-color: transparent;
+        color:rgba(12, 132, 168, 0.8);
+        outline: 2px  solid rgba(12, 132, 168, 0.8);
+        margin-top: 20px;
+    }
+    .container .container3{
+        height: 100%;
+        width: 130%;
+        border-radius: 30px 30px 0 0;
+    }
+    .container .container4{
+        height: 100%;
+        width: 130%;
+        border-radius: 30px;
+    }
+    .container3 b{
+        font-size: 30px;  
+    }
+    .container4 b{
+        font-size: 30px;
+    }
+    .container .container3 p{
+        font-size: 16px;
+        padding: 10px;
+        text-align: start;
+        word-spacing: -2px;
+        line-height: 20px;
+        border-top: 1px solid #ccc;
+    }
+    .container .container4 p{
+        font-size: 16px;
+        padding: 30px 20px;
+        margin-left: 0;
+        margin-right: 5px;
+        text-align:start;
+        word-spacing: -2px;
+        line-height: 20px;
+        box-shadow: 10px 10px 0 0 #ccc;
+    }
+    .partners .stroke-container{
+        display:block;
+    }
+    .partners .containerBg{
+        height: 50vh;
+        width: 130%;
+        margin-bottom: 150px;
+    }
+    .containerBg .container5{
+        position: absolute;
+        bottom: -150px;
+        right: 0;
+        width: fit-content;
+    }
+}
+@media (max-width:500px) {
+    .container .container2 p{
+        font-size: 15px;
+    }
+    .container4 p{
+        font-size: 15px;
+    }
+    .container5 p{
+        font-size: 15px;
+    }
+    .container5 b{
+        font-size: 15px;
+    }
+    .container3 p{
+        font-size: 15px;
+    }
+}

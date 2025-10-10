@@ -1,0 +1,14 @@
+.update-driver{
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    padding: 10px 15%;
+    background-color: rgb(9, 51, 65);
+    color:#fff;;
+    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+    width: 100%;
+}
+.update-driver .MuiTextField-root {
+    border-radius: 5px;
+    background-color:#d3d2d2; 
+}

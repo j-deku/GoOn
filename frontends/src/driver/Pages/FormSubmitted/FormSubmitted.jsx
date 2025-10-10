@@ -1,0 +1,27 @@
+import React from 'react'
+import './FormSubmitted.css'
+import {Skeleton} from 'antd';
+import { Helmet } from 'react-helmet-async';
+const FormSubmitted = () => {
+  return (
+        <>
+        <Helmet>
+          <title>Form Submitted - TOLI-Driver</title>
+        </Helmet>
+    <div className='overlay'>
+    <div className='form-submitted'>
+    <h1>Success! ✅</h1><br/>
+    <p><em>Thanks, your form has been submitted successfully, 
+
+    <br/>Wait for further enquiries/approval of your registration in 2-3 days. <br/><br/>
+
+    <br/><b>*</b> Please thoroughly check your email for your updates.</em></p>
+    <Skeleton active paragraph={{ rows: 4 }} title={false} className='loader'/>
+    <br/>
+    </div>
+    </div>
+    </>
+  )
+}
+
+export default FormSubmitted
