@@ -18,6 +18,9 @@ import { clearMultipleCookies, setAppCookie } from "../utils/CookieHelper.js";
 import mongoose from "mongoose";
 import { notificationQueue } from "../queues/NotificationQueue.js";
 import logger from "../middlewares/logger.js";
+import prisma from "../config/Db.js";
+import { UserRole, DriverStatus } from "@prisma/client";
+import { logActivity } from "../utils/logActivity.js";
 
 const scheduleRideReminder = (ride) => {
   const rideTime = new Date(ride.selectedDate).getTime();
@@ -35,147 +38,267 @@ const scheduleRideReminder = (ride) => {
 
 // ----------- TOKEN HELPERS -----------
 const signAccessToken = (user) =>
-  jwt.sign({ id: user._id, roles: user.roles }, process.env.JWT_SECRET, { expiresIn: "1d" });
+  jwt.sign({ id: user.id, roles: user.roles }, process.env.JWT_SECRET, { expiresIn: "1d" });
 
 const signRefreshToken = (user) =>
-  jwt.sign({ id: user._id }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
+  jwt.sign({ id: user.id }, process.env.REFRESH_TOKEN_SECRET, { expiresIn: "7d" });
 
 const registerDriver = async (req, res) => {
-  const session = await mongoose.startSession();
-  session.startTransaction();
+  
+  const {
+    name,
+    email,
+    password,
+    phone,
+    licenseNumber,
+    vehicleType,
+    model,
+    registrationNumber,
+    capacity,
+  } = req.body;
+
+  const avatar = req.file ? req.file.path : null;
+  console.log("🧾 req.body:", req.body);
+console.log("📸 req.file:", req.file);
+
+  // 1️⃣ Validate required fields
+  if (
+    !name ||
+    !email ||
+    !password ||
+    !avatar ||
+    !phone ||
+    !licenseNumber ||
+    !vehicleType ||
+    !model ||
+    !registrationNumber ||
+    !capacity
+  ) {
+    return res.status(422).json({
+      success: false,
+      message: "All driver fields are required.",
+    });
+  }
+
+  // 2️⃣ Validate email and password
+  if (!validator.isEmail(email)) {
+    return res.status(422).json({
+      success: false,
+      message: "Invalid email format.",
+    });
+  }
+
+  if (!validator.isStrongPassword(password, { minLength: 8 })) {
+    return res.status(422).json({
+      success: false,
+      message:
+        "Password must be ≥8 chars and include uppercase, lowercase & special character.",
+    });
+  }
 
   try {
-    const {
-      name, email, password,
-      phone, licenseNumber,
-      vehicleType, model,
-      registrationNumber, capacity,
-    } = req.body;
-
-    // 1) Required fields
-    if (
-      !name || !email || !password ||
-      !phone || !licenseNumber ||
-      !vehicleType || !model ||
-      !registrationNumber || !capacity
-    ) {
-      await session.abortTransaction();
-      return res.status(422).json({
-        success: false,
-        message: "All driver fields are required."
+    const result = await prisma.$transaction(async (tx) => {
+      // 3️⃣ Check if user exists
+      let user = await tx.user.findUnique({
+        where: { email },
+        include: {
+          roleAssignments: true,
+          driverProfile: true,
+        },
       });
-    }
 
-    // 2) Validate email & password
-    if (!validator.isEmail(email)) {
-      await session.abortTransaction();
-      return res.status(422).json({
-        success: false,
-        message: "Invalid email format."
-      });
-    }
-    if (!validator.isStrongPassword(password, { minLength: 8 })) {
-      await session.abortTransaction();
-      return res.status(422).json({
-        success: false,
-        message: "Password must be ≥8 chars and include uppercase, lowercase & special character."
-      });
-    }
-
-    // 3) Lookup existing user
-    let user = await UserModel.findOne({ email }).session(session);
-
-    if (user) {
-      // 3a) If already a driver, conflict
-      if (user.roles.includes("driver")) {
-        await session.abortTransaction();
-        return res.status(409).json({
-          success: false,
-          message: "A driver account with this email already exists. Please log in."
-        });
-      }
-
-      // 3b) Else: upgrade them to driver (200 OK)
-      user.roles.push("driver");
-      if (!user.password) {
-        const salt = await bcrypt.genSalt(10);
-        user.password = password;
-      }
-      await user.save({ session });
-
-      // Create driver profile
-      const driverProfile = new DriverProfile({
-        user: user._id,
-        phone,
-        licenseNumber,
-        vehicle: { vehicleType, model, registrationNumber, capacity: Number(capacity) },
-        status: "pending",
-        approved: false,
-      });
-      await driverProfile.save({ session });
-
-      await session.commitTransaction();
-      return res.status(200).json({
-        success: true,
-        message: "Driver role added and profile created. Awaiting admin approval.",
-        driver: {
-          id: driverProfile._id,
-          name: user.name,
-          email: user.email,
-          phone: driverProfile.phone,
+      // === CASE 1: Existing user ===
+      if (user) {
+        const hasDriverRole = user.roleAssignments.some(
+          (r) => r.role === UserRole.DRIVER
+        );
+      console.log("🟠 Existing user flow reached:", email);
+        if (hasDriverRole) {
+          throw {
+            status: 409,
+            message:
+              "A driver account with this email already exists. Please log in.",
+          };
         }
-      });
-    }
 
-    // 3c) New user + driver role (201 Created)
-    user = new UserModel({
-      name,
-      email,
-      password,     // pre('save') will hash
-      roles: ["driver"],
-      verified: true,
-    });
-    await user.save({ session });
+        // Update password if missing
+        let hashedPassword = user.password;
+        if (!user.password) {
+          const salt = await bcrypt.genSalt(10);
+          hashedPassword = await bcrypt.hash(password, salt);
+        }
 
-    const driverProfile = new DriverProfile({
-      user: user._id,
-      phone,
-      licenseNumber,
-      vehicle: { vehicleType, model, registrationNumber, capacity: Number(capacity) },
-      status: "pending",
-      approved: false,
-    });
-    await driverProfile.save({ session });
+        // Add driver role
+        await tx.user.update({
+          where: { id: user.id },
+          data: {
+            password: hashedPassword,
+            avatar,
+            roleAssignments: {
+              create: {
+                role: UserRole.DRIVER,
+              },
+            },
+          },
+        });
 
-    await session.commitTransaction();
-    return res.status(201).json({
-      success: true,
-      message: "Driver registration successful. Awaiting admin approval.",
-      driver: {
-        id: driverProfile._id,
-        name: user.name,
-        email: user.email,
-        phone: driverProfile.phone,
+        // Create driver profile
+        const driverProfile = await tx.driverProfile.create({
+          data: {
+            userId: user.id,
+            phone,
+            licenseNumber,
+            vehicleType,
+            model,
+            registrationNumber,
+            capacity: Number(capacity),
+            status: DriverStatus.pending,
+            approved: false,
+          },
+        });
+
+        return {
+          status: 200,
+          driver: {
+            id: driverProfile.id,
+            name: user.name,
+            email: user.email,
+            phone: driverProfile.phone,
+            avatar,
+          },
+          message:
+            "Driver role added and profile created. Awaiting admin approval.",
+        };
       }
+
+      // === CASE 2: New user registration ===
+      console.log("🟢 New user flow reached:", email);
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(password, salt);
+
+      const newUser = await tx.user.create({
+        data: {
+          name,
+          email,
+          password: hashedPassword,
+          avatar,
+          verified: true,
+          roleAssignments: {
+            create: {
+              role: UserRole.DRIVER,
+            },
+          },
+        },
+      });
+
+      const driverProfile = await tx.driverProfile.create({
+        data: {
+          userId: newUser.id,
+          phone,
+          licenseNumber,
+          vehicleType,
+          model,
+          registrationNumber,
+          capacity: Number(capacity),
+          status: DriverStatus.pending,
+          approved: false,
+        },
+      });
+
+      return {
+        status: 201,
+        driver: {
+          id: driverProfile.id,
+          name: newUser.name,
+          email: newUser.email,
+          phone: driverProfile.phone,
+          avatar,
+        },
+        message: "Driver registration successful. Awaiting admin approval.",
+      };
     });
 
+    setAppCookie(res, "driverRegisteredEmail", email, {
+      maxAge: 1000 * 60 * 10, // 10 minutes    
+      path: "/",
+    });
+
+    return res.status(result.status).json({
+      success: true,
+      message: result.message,
+      driver: result.driver,
+    });
   } catch (error) {
-    // Handle duplicate-key race
-    if (error.code === 11000 && error.keyPattern?.email) {
-      await session.abortTransaction();
+    // Duplicate email constraint
+    if (error.code === "P2002" && error.meta?.target?.includes("email")) {
       return res.status(409).json({
         success: false,
-        message: "This email is already in use. Please log in or use a different email."
+        message:
+          "This email is already in use. Please log in or use a different email.",
       });
     }
+
+    // Custom thrown error
+    if (error.status) {
+      return res.status(error.status).json({
+        success: false,
+        message: error.message,
+      });
+    }
+
     console.error("registerDriver error:", error);
-    await session.abortTransaction();
     return res.status(500).json({
       success: false,
-      message: "Server error registering driver."
+      message: "Server error registering driver.",
     });
-  } finally {
-    session.endSession();
+  }
+};
+
+const formSubmitted = async (req, res) => {
+  try {
+    // 🧩 Extract and sanitize cookie
+    const driverRegisteredEmail = req.cookies?.driverRegisteredEmail?.trim();
+
+    // 1️⃣ Validate cookie presence
+    if (!driverRegisteredEmail) {
+      return res.status(400).json({
+        success: false,
+        message: "No recent driver registration found. Please register first.",
+      });
+    }
+
+    // 2️⃣ Optional: verify that this email exists in the database
+    const existingUser = await prisma.user.findUnique({
+      where: { email: driverRegisteredEmail },
+      select: { id: true, name: true, verified: true },
+    });
+
+    if (!existingUser) {
+      // Cookie exists but user not found — possible stale cookie or tampering
+      setAppCookie(res, "driverRegisteredEmail", "", {
+        maxAge: 10 * 60 * 1000, // 10 minutes
+        path: "/",
+      });
+      return res.status(404).json({
+        success: false,
+        message: "Registration record not found. Please register again.",
+      });
+    }
+    // 4️⃣ Response
+    return res.status(200).json({
+      success: true,
+      message: "Form submitted successfully. Awaiting admin approval.",
+      data: {
+        email: driverRegisteredEmail,
+        verified: existingUser.verified,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error verifying form submission:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error while verifying form submission.",
+    });
   }
 };
 
@@ -183,7 +306,7 @@ const loginDriver = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // 1. Missing fields ➜ 422 Unprocessable Entity
+    // 1️⃣ Missing fields
     if (!email || !password) {
       return res.status(422).json({
         success: false,
@@ -191,17 +314,35 @@ const loginDriver = async (req, res) => {
       });
     }
 
-    // 2. User not found or not a driver ➜ 401 Unauthorized
-    const user = await UserModel.findOne({ email });
-    if (!user || !user.roles.includes("driver")) {
+    // 2️⃣ Find user and roles
+    const user = await prisma.user.findUnique({
+      where: { email },
+      include: {
+        roleAssignments: true,
+        driverProfile: true,
+        refreshTokens: true,
+      },
+    });
+
+    if (!user) {
+      return res.status(401).json({
+        success: false,
+        message: "Invalid email or password.",
+      });
+    }
+
+    const roles = user.roleAssignments.map((r) => r.role);
+
+    // Must be driver
+    if (!roles.includes("DRIVER")) {
       return res.status(401).json({
         success: false,
         message: "Not authorized as driver. Please register first.",
       });
     }
 
-    // 3. Driver profile not found ➜ 404 Not Found
-    const driverProfile = await DriverProfile.findOne({ user: user._id });
+    // 3️⃣ Ensure driver profile exists
+    const driverProfile = user.driverProfile;
     if (!driverProfile) {
       return res.status(404).json({
         success: false,
@@ -209,15 +350,13 @@ const loginDriver = async (req, res) => {
       });
     }
 
-    // 4. Driver not approved yet ➜ 403 Forbidden
+    // 4️⃣ Check approval + status
     if (!driverProfile.approved) {
       return res.status(403).json({
         success: false,
         message: "Your account is pending admin approval.",
       });
     }
-
-    // 5. Driver account inactive ➜ 403 Forbidden
     if (driverProfile.status !== "active") {
       return res.status(403).json({
         success: false,
@@ -225,174 +364,355 @@ const loginDriver = async (req, res) => {
       });
     }
 
-    // 6. Locked account ➜ 423 Locked
-    if (user.lockUntil && user.lockUntil > Date.now()) {
+    // 5️⃣ Check lock status
+    if (user.lockUntil && new Date(user.lockUntil) > new Date()) {
       return res.status(423).json({
         success: false,
         message: "Account locked. Try again later.",
       });
     }
 
-    // 7. Check password ➜ 401 Unauthorized
-    const isMatch = await user.comparePassword(password);
-    if (!isMatch) {
-      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
-      if (user.failedLoginAttempts >= 5) {
-        user.lockUntil = Date.now() + 30 * 60 * 1000; // Lock for 30 minutes
-        await user.save();
-        return res.status(423).json({
-          success: false,
-          message: "Account locked due to too many failed login attempts.",
-        });
-      }
-
-      await user.save();
+    // 6️⃣ Validate password
+    if (!user.password) {
       return res.status(401).json({
         success: false,
-        message: "Incorrect email or password.",
+        message: "Password not set. Please reset your account.",
       });
     }
 
-    // 8. Reset login attempts
-    user.failedLoginAttempts = 0;
-    user.lockUntil = undefined;
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      const failedAttempts = user.failedLoginAttempts + 1;
+      let lockUntil = user.lockUntil;
 
-    // 9. Generate tokens
+      // Lock after 5 failed attempts
+      if (failedAttempts >= 5) {
+        lockUntil = new Date(Date.now() + 30 * 60 * 1000); // 30 minutes
+      }
+
+      await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          failedLoginAttempts: failedAttempts,
+          lockUntil,
+        },
+      });
+
+      return res.status(failedAttempts >= 5 ? 423 : 401).json({
+        success: false,
+        message:
+          failedAttempts >= 5
+            ? "Account locked due to too many failed login attempts."
+            : "Incorrect email or password.",
+      });
+    }
+
+    // 7️⃣ Reset failed attempts + update last login
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        failedLoginAttempts: 0,
+        lockUntil: null,
+        lastLoginAt: new Date(),
+      },
+    });
+
+    // 8️⃣ Generate tokens
     const accessToken = signAccessToken(user);
     const refreshTokenRaw = signRefreshToken(user);
     const hashedToken = await bcrypt.hash(refreshTokenRaw, 10);
 
-    if (!Array.isArray(user.refreshTokens)) user.refreshTokens = [];
+    // Remove expired/old refresh tokens, keep last 4 valid ones
+    const validTokens = user.refreshTokens
+      .filter(
+        (rt) => !rt.revoked && (!rt.expiresAt || new Date(rt.expiresAt) > new Date())
+      )
+      .slice(-4);
 
-    user.refreshTokens = [
-      ...user.refreshTokens
-        .filter(rt => !rt.revoked && (!rt.expiresAt || rt.expiresAt > new Date()))
-        .slice(-4),
-      {
-        token: hashedToken,
-        createdAt: new Date(),
-        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-        revoked: false,
-      },
-    ];
-    await user.save();
-    await driverProfile.save();
+    await prisma.$transaction(async (tx) => {
+      // Revoke all expired ones
+      await tx.refreshToken.updateMany({
+        where: {
+          userId: user.id,
+          OR: [
+            { revoked: true },
+            { expiresAt: { lt: new Date() } },
+          ],
+        },
+        data: { revoked: true },
+      });
+
+      // Add new refresh token
+      await tx.refreshToken.create({
+        data: {
+          userId: user.id,
+          token: hashedToken,
+          revoked: false,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        },
+      });
+    });
+
+    // 9️⃣ Set cookies
+    setAppCookie(res, "driverAccessToken", accessToken, {
+      maxAge: 15 * 60 * 1000, // 15 mins
+      path: "/api/driver",
+    });
 
     setAppCookie(res, "driverRefreshToken", refreshTokenRaw, {
-      maxAge: 7 * 24 * 60 * 60 * 1000,
-      path:"/api/driver",
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      path: "/api/driver",
     });
 
-    setAppCookie(res, "driverAccessToken", accessToken, {
-      maxAge: 15 * 60 * 1000,
-      path:"/api/driver",
-    });
-
+    // 🔟 Respond success
     return res.status(200).json({
       success: true,
       message: "Login successful",
-      roles: user.roles,
-      driverId: driverProfile._id
+      roles,
+      driverId: driverProfile.id,
     });
-
   } catch (error) {
     console.error("Driver login error:", error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       success: false,
       message: "Server error. Please try again later.",
     });
   }
 };
-
 const getDriverProfile = async (req, res) => {
-  const driverProfile = await DriverProfile
-    .findOne({ user: req.user._id })
-    .populate("user", "-password -refreshTokens");
+  try {
+    const userId = req.user?.id; // Prisma uses numeric IDs (Int)
 
-  if (!driverProfile) {
-    return res.status(404).json({ success: false, message: "Driver profile not found" });
-  }
-
-  // send back a flat payload:
-  res.json({
-    success: true,
-    driver: {
-      id: driverProfile._id,
-      name: req.user.name,
-      email: req.user.email,
-      avatar: req.user.avatar,
-      phone: driverProfile.phone,
-      vehicle: driverProfile.vehicle,
-      // …any other fields you need
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized: No user found" });
     }
-  });
+
+    // 🔍 Find driver profile + include the linked user
+    const driverProfile = await prisma.driverProfile.findUnique({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar: true,
+          },
+        },
+      },
+    });
+
+    if (!driverProfile) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Driver profile not found" });
+    }
+
+    // 🧾 Flatten payload for frontend
+    const response = {
+      success: true,
+      driver: {
+        id: driverProfile.id,
+        name: driverProfile.user.name,
+        email: driverProfile.user.email,
+        avatar: driverProfile.user.avatar,
+        phone: driverProfile.phone,
+        licenseNumber: driverProfile.licenseNumber,
+        vehicleType: driverProfile.vehicleType,
+        model: driverProfile.model,
+        registrationNumber: driverProfile.registrationNumber,
+        capacity: driverProfile.capacity,
+        status: driverProfile.status,
+        approved: driverProfile.approved,
+        rating: driverProfile.rating,
+        totalRides: driverProfile.totalRides,
+        isAvailable: driverProfile.isAvailable,
+        createdAt: driverProfile.createdAt,
+        updatedAt: driverProfile.updatedAt,
+      },
+    };
+
+    res.json(response);
+  } catch (error) {
+    console.error("❌ Error fetching driver profile:", error);
+    res.status(500).json({
+      success: false,
+      message: "Server error while fetching driver profile",
+      error: error.message,
+    });
+  }
 };
 
 const updateDriverProfile = async (req, res) => {
   try {
+    const userId = req.user?.id; // Prisma uses Int IDs
     const updates = req.body;
-    const userId = req.user._id;
 
-    // Fetch the driver's profile and populate the user reference
-    const driverProfile = await DriverProfile.findOne({ user: userId }).populate("user");
-
-    if (!driverProfile) {
-      return res.status(404).json({ success: false, message: "Driver profile not found" });
+    if (!userId) {
+      return res.status(401).json({ success: false, message: "Unauthorized: no user found" });
     }
 
-    // Update fields on driverProfile
-    if (updates.phone) driverProfile.phone = updates.phone;
-    if (updates.availability !== undefined) driverProfile.availability = updates.availability;
+    // ✅ Fetch the driver profile and user in one go
+    const existingProfile = await prisma.driverProfile.findUnique({
+      where: { userId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            avatar: true,
+          },
+        },
+      },
+    });
 
-    // Update fields on user
-    if (updates.name) driverProfile.user.name = updates.name;
-    if (updates.email) driverProfile.user.email = updates.email;
+    if (!existingProfile) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver profile not found",
+      });
+    }
 
-    // Optional: update avatar
+    // ✅ Prepare updates for both user and driverProfile
+    const userUpdates = {};
+    const profileUpdates = {};
+
+    if (updates.name) userUpdates.name = updates.name;
+    if (updates.email) userUpdates.email = updates.email;
+    if (updates.phone) profileUpdates.phone = updates.phone;
+    if (updates.availability !== undefined) profileUpdates.isAvailable = updates.availability;
+
+    // ✅ Handle avatar upload (if file provided)
     if (req.file) {
-      driverProfile.user.avatar = req.file.path;
+      userUpdates.avatar = req.file.path;
     }
 
-    await driverProfile.user.save();
-    await driverProfile.save();
+    // ✅ Update both records inside a transaction for consistency
+    const [updatedUser, updatedProfile] = await prisma.$transaction([
+      prisma.user.update({
+        where: { id: userId },
+        data: userUpdates,
+      }),
+      prisma.driverProfile.update({
+        where: { userId },
+        data: profileUpdates,
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              avatar: true,
+            },
+          },
+        },
+      }),
+    ]);
 
-    const updatedProfile = await driverProfile.populate("user", "-password -refreshTokens");
-
-    res.json({ success: true, driverProfile: updatedProfile });
+    return res.json({
+      success: true,
+      driverProfile: {
+        ...updatedProfile,
+        user: updatedUser,
+      },
+    });
   } catch (error) {
-    console.error("Error updating driver profile:", error);
-    res.status(500).json({ success: false, message: "Update failed" });
+    console.error("❌ Error updating driver profile:", error);
+    res.status(500).json({
+      success: false,
+      message: "Update failed",
+      error: error.message,
+    });
   }
 };
 
 // ========== DELETE: Delete Driver Profile ==========
 const deleteDriverProfile = async (req, res) => {
   try {
-    await DriverProfile.findOneAndDelete({ user: req.user._id });
-    await UserModel.findByIdAndUpdate(req.user._id, { $pull: { roles: "driver" } });
-    res.json({ success: true, message: "Driver profile deleted" });
+    const userId = req.user?.id;
+
+    if (!userId) {
+      return res.status(401).json({
+        success: false,
+        message: "Unauthorized: user not found",
+      });
+    }
+
+    // ✅ Check if the driver profile exists first
+    const existingProfile = await prisma.driverProfile.findUnique({
+      where: { userId },
+    });
+
+    if (!existingProfile) {
+      return res.status(404).json({
+        success: false,
+        message: "Driver profile not found",
+      });
+    }
+
+    // ✅ Delete profile & remove DRIVER role atomically
+    await prisma.$transaction(async (tx) => {
+      await tx.driverProfile.delete({
+        where: { userId },
+      });
+
+      await tx.userRoleAssignment.deleteMany({
+        where: {
+          userId,
+          role: "DRIVER",
+        },
+      });
+    });
+
+    return res.json({
+      success: true,
+      message: "Driver profile deleted successfully",
+    });
   } catch (error) {
-    res.status(500).json({ success: false, message: "Delete failed" });
+    console.error("❌ Error deleting driver profile:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Delete failed",
+      error: error.message,
+    });
   }
 };
-
 // ========== FORGOT PASSWORD ==========
 const forgotPassword = async (req, res) => {
   const { email } = req.body;
+
   try {
-    const user = await UserModel.findOne({ email, roles: "driver" });
-    if (!user) return res.status(404).json({ message: "Driver not found" });
+    // ✅ Check if user exists and has DRIVER role
+    const user = await prisma.user.findFirst({
+      where: {
+        email,
+        roleAssignments: {
+          some: { role: "DRIVER" },
+        },
+      },
+    });
 
-    // Generate secure reset token
+    if (!user) {
+      return res.status(404).json({ success: false, message: "Driver not found" });
+    }
+
+    // ✅ Generate reset token
     const resetToken = crypto.randomBytes(32).toString("hex");
-    user.resetToken = resetToken;
-    user.resetTokenExpires = Date.now() + 60 * 60 * 1000; // 1 hour
-    await user.save();
+    const resetTokenExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
 
-    // Send Email
+    // ✅ Update user record
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { resetToken, resetTokenExpires },
+    });
+
+    // ✅ Verify SMTP credentials
     if (!process.env.SMTP_USER || !process.env.SMTP_PASS) {
       throw new Error("SMTP credentials are missing");
     }
+
+    // ✅ Configure transporter
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
@@ -400,107 +720,206 @@ const forgotPassword = async (req, res) => {
         pass: process.env.SMTP_PASS,
       },
     });
+
     const resetLink = `${process.env.FRONTEND_URL}/driver/reset-password/${resetToken}`;
+
+    // ✅ Send reset email
     await transporter.sendMail({
+      from: `"GoOn Support" <${process.env.SMTP_USER}>`,
       to: user.email,
       subject: "Driver Password Reset",
-      html: `<p>Click the link below to reset your password:</p>
-             <a href="${resetLink}">${resetLink}</a>
-             <p>This link will expire in 1 hour.</p>`,
+      html: `
+        <div style="font-family:Arial,sans-serif;max-width:600px;margin:auto;">
+          <h2>Password Reset Request</h2>
+          <p>Hello ${user.name || "Driver"},</p>
+          <p>You requested a password reset. Click the button below to reset your password:</p>
+          <a href="${resetLink}"
+             style="display:inline-block;padding:10px 20px;background:#007bff;color:#fff;
+             text-decoration:none;border-radius:5px;">Reset Password</a>
+          <p>This link will expire in 1 hour.</p>
+          <hr />
+          <small>If you didn’t request this, please ignore this email.</small>
+        </div>
+      `,
     });
 
-    res.json({ message: "Password reset email sent ✅" });
+    res.json({ success: true, message: "Password reset email sent ✅" });
   } catch (error) {
     console.error("Forgot password error:", error);
-    res.status(500).json({ message: error.message || "Server error" });
+    res.status(500).json({
+      success: false,
+      message: error.message || "Failed to send password reset email",
+    });
   }
 };
-
-// ========== RESET PASSWORD ==========
+// ========== RESET PASSWORD (Driver) ==========
 const resetPassword = async (req, res) => {
   const { token } = req.params;
   const { newPassword } = req.body;
+
   try {
-    const user = await UserModel.findOne({
-      resetToken: token,
-      resetTokenExpires: { $gt: Date.now() }
+    // ✅ Find user with matching token and valid expiration
+    const user = await prisma.user.findFirst({
+      where: {
+        resetToken: token,
+        resetTokenExpires: { gt: new Date() },
+        roleAssignments: {
+          some: { role: "DRIVER" },
+        },
+      },
     });
-    if (!user || !user.roles.includes("driver")) return res.status(400).json({ message: "Invalid or expired token" });
 
-    user.password = newPassword;
-    user.resetToken = undefined;
-    user.resetTokenExpires = undefined;
-    await user.save();
+    if (!user) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid or expired password reset link",
+      });
+    }
 
-    res.json({ message: "Password reset successful" });
+    // ✅ Update password and clear reset fields
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: newPassword, // Hash if using bcrypt middleware or manual hash
+        resetToken: null,
+        resetTokenExpires: null,
+      },
+    });
+
+    res.json({
+      success: true,
+      message: "Password reset successful. You can now log in.",
+    });
   } catch (error) {
     console.error("Reset password error:", error);
-    res.status(500).json({ message: error.message || "Server error" });
+    res.status(500).json({
+      success: false,
+      message: error.message || "Password reset failed",
+    });
   }
 };
 
 const getDriverRides = async (req, res) => {
   try {
-    const rides = await RideModel.find({ driver: req.user._id })
-      .sort({ createdAt: -1 })
-      .select("pickup destination price selectedDate selectedTime passengers type currency status");
-    return res.json({ rides });
+    const driverId = req.user.id;
+
+    const rides = await prisma.ride.findMany({
+      where: { driverId },
+      orderBy: { createdAt: "desc" },
+      select: {
+        id: true,
+        pickup: true,
+        destination: true,
+        price: true,
+        selectedDate: true,
+        selectedTime: true,
+        capacity: true,
+        maxPassengers: true,
+        type: true,
+        currency: true,
+        status: true,
+      },
+    });
+
+    return res.json({ success: true, rides });
   } catch (error) {
     console.error("Error fetching driver rides:", error);
-    return res.status(500).json({ success: false, message: "Server error." });
+    return res.status(500).json({
+      success: false,
+      message: "Failed to fetch rides",
+    });
   }
 };
+
+// =====================
+// GET RIDE BY ID
+// =====================
 const getRideById = async (req, res) => {
   try {
-    const ride = await RideModel.findById(req.params.id).select("-__v");
-    if (!ride) return res.status(404).json({ success:false, message:"Ride not found" });
-    if (ride.driver.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ success:false, message:"Unauthorized" });
-    }
-    res.json({ success:true, ride });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success:false, message:"Server error" });
-  }
-};
+    const driverId = req.user.id;
+    const rideId = parseInt(req.params.id, 10);
 
-const deleteRide = async (req, res) => {
-  try {
-    const ride = await RideModel.findById(req.params.id);
-    if (!ride) return res.status(404).json({ success:false, message:"Ride not found" });
-    if (ride.driver.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ success:false, message:"Unauthorized" });
-    }
-    await ride.deleteOne();
-    res.json({ success:true, message:"Ride deleted" });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ success:false, message:"Server error" });
-  }
-};
+    const ride = await prisma.ride.findUnique({
+      where: { id: rideId },
+      include: {
+        driver: {
+          select: { id: true, name: true, email: true },
+        },
+      },
+    });
 
-const updateRide = async (req, res) => {
-  try {
-    const rideId = req.params.id;
-
-    // 1. Find the ride and ensure it belongs to this driver
-    const ride = await RideModel.findById(rideId);
     if (!ride) {
       return res.status(404).json({ success: false, message: "Ride not found" });
     }
-    if (ride.driver.toString() !== req.driver._id.toString()) {
+
+    if (ride.driverId !== driverId) {
+      return res.status(403).json({ success: false, message: "Unauthorized access" });
+    }
+
+    res.json({ success: true, ride });
+  } catch (error) {
+    console.error("Error fetching ride by ID:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
+};
+
+
+// =====================
+// DELETE RIDE
+// =====================
+const deleteRide = async (req, res) => {
+  try {
+    const driverId = req.user.id;
+    const rideId = parseInt(req.params.id, 10);
+
+    const ride = await prisma.ride.findUnique({
+      where: { id: rideId },
+    });
+
+    if (!ride) {
+      return res.status(404).json({ success: false, message: "Ride not found" });
+    }
+
+    if (ride.driverId !== driverId) {
+      return res.status(403).json({ success: false, message: "Unauthorized" });
+    }
+
+    await prisma.ride.delete({ where: { id: rideId } });
+
+    res.json({ success: true, message: "Ride deleted successfully" });
+  } catch (error) {
+    console.error("Error deleting ride:", error);
+    res.status(500).json({ success: false, message: "Failed to delete ride" });
+  }
+};
+
+
+const updateRide = async (req, res) => {
+  try {
+    const rideId = Number(req.params.id);
+
+    // 1️⃣ Find the ride and ensure it belongs to this driver
+    const ride = await prisma.ride.findUnique({
+      where: { id: rideId },
+      include: { driver: true },
+    });
+
+    if (!ride) {
+      return res.status(404).json({ success: false, message: "Ride not found" });
+    }
+
+    if (ride.driverId !== req.user.id) {
       return res.status(403).json({ success: false, message: "Not authorized to edit this ride" });
     }
 
-    const cfg = await CommissionModel.findOne({ active: true }).sort({ effectiveFrom: -1 });
+    // 2️⃣ Get the latest active commission config
+    const cfg = await prisma.commissionConfig.findFirst({
+      where: { active: true },
+      orderBy: { effectiveFrom: "desc" },
+    });
     const rate = cfg?.rate ?? ride.commissionRate;
 
-    // 2. If you allow updating the image:
-    if (req.file) {
-      ride.imageUrl = req.file.path;
-    }
-
-    // 3. Update allowed fields
+    // 3️⃣ Prepare updates
     const allowedUpdates = [
       "pickup",
       "destination",
@@ -509,612 +928,955 @@ const updateRide = async (req, res) => {
       "description",
       "selectedDate",
       "selectedTime",
-      "passengers",
+      "capacity",
+      "maxPassengers",
       "type",
       "status",
     ];
-    allowedUpdates.forEach(field => {
-      if (req.body[field] !== undefined) {
-        ride[field] = req.body[field];
-      }
-    });
 
-      if (req.body.price !== undefined) {
-      ride.commissionRate   = rate;
-      ride.commissionAmount = +(ride.price * rate).toFixed(2);
-      ride.payoutAmount     = +(ride.price * (1 - rate)).toFixed(2);
+    const updates = {};
+
+  const numericFields = ["price", "capacity", "maxPassengers"];
+
+    allowedUpdates.forEach((field) => {
+  if (req.body[field] !== undefined) {
+    if (numericFields.includes(field)) {
+      updates[field] = parseFloat(req.body[field]);
+    } else if (field === "selectedDate") {
+      // Normalize to full ISO date
+      updates[field] = new Date(req.body[field]);
+    } else {
+      updates[field] = req.body[field];
+    }
+  }
+});
+
+if (req.body.selectedDate && req.body.selectedTime) {
+  const dateTimeString = `${req.body.selectedDate}T${req.body.selectedTime}:00Z`;
+  updates.selectedDate = new Date(dateTimeString);
+}
+
+
+    // Handle optional image update
+    if (req.file) {
+      updates.imageUrl = req.file.path;
     }
 
-    // 4. (Optional) Re-geocode if pickup or destination changed
+    // 4️⃣ Recalculate commission if price changed
+    if (req.body.price !== undefined) {
+      const price = parseFloat(req.body.price);
+      updates.commissionRate = rate;
+      updates.commissionAmount = +(price * rate).toFixed(2);
+      updates.payoutAmount = +(price * (1 - rate)).toFixed(2);
+    }
+
+    // 5️⃣ (Optional) Re-geocode pickup/destination
     if (req.body.pickup || req.body.destination) {
       const [newPickup, newDest] = await Promise.all([
         req.body.pickup ? geocodeAddress(req.body.pickup) : null,
         req.body.destination ? geocodeAddress(req.body.destination) : null,
       ]);
+
       if (newPickup) {
-        ride.pickupLocation = {
-          type: "Point",
-          coordinates: [newPickup.longitude, newPickup.latitude],
-        };
+        updates.pickupNorm = `${newPickup.latitude},${newPickup.longitude}`;
       }
       if (newDest) {
-        ride.destinationLocation = {
-          type: "Point",
-          coordinates: [newDest.longitude, newDest.latitude],
-        };
+        updates.destinationNorm = `${newDest.latitude},${newDest.longitude}`;
       }
     }
 
-    // 5. Save and return the updated ride
-    await ride.save();
-    return res.json({ success: true, message: "Ride updated successfully", ride });
+    // 6️⃣ Update ride
+    const updatedRide = await prisma.ride.update({
+      where: { id: rideId },
+      data: updates,
+    });
 
+    return res.json({
+      success: true,
+      message: "Ride updated successfully",
+      ride: updatedRide,
+    });
   } catch (error) {
     console.error("Error in updateRide:", error);
     return res.status(500).json({ success: false, message: "Internal Server Error" });
   }
 };
-
 const updateRideStatusDriver = async (req, res) => {
   try {
     const { rideId, status } = req.body;
-    const ride = await RideModel.findById(rideId);
+
+    // 1️⃣ Validate input
+    if (!rideId || !status) {
+      return res.status(400).json({ success: false, message: "Ride ID and status are required" });
+    }
+
+    // 2️⃣ Find ride and ensure the driver owns it
+    const ride = await prisma.ride.findUnique({
+      where: { id: Number(rideId) },
+      select: { id: true, driverId: true, status: true },
+    });
+
     if (!ride) {
       return res.status(404).json({ success: false, message: "Ride not found" });
     }
-    if (ride.driver.toString() !== req.driver._id.toString()) {
-      return res.status(403).json({ success: false, message: "You are not authorized to update this ride" });
+
+    if (ride.driverId !== req.user.id) {
+      return res.status(403).json({
+        success: false,
+        message: "You are not authorized to update this ride",
+      });
     }
-    ride.status = status;
-    await ride.save();
-    return res.status(200).json({ success: true, message: "Ride status updated successfully", ride });
+
+    // 3️⃣ Update the ride status
+    const updatedRide = await prisma.ride.update({
+      where: { id: Number(rideId) },
+      data: {
+        status,
+        updatedAt: new Date(),
+      },
+    });
+
+    // 4️⃣ (Optional) Add Activity Log entry
+    await prisma.activityLog.create({
+      data: {
+        userId: req.user.id,
+        role: "DRIVER",
+        action: "UPDATE_RIDE_STATUS",
+        description: `Driver updated ride #${rideId} status to ${status}`,
+        req,
+      },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Ride status updated successfully",
+      ride: updatedRide,
+    });
   } catch (error) {
     console.error("Error updating ride status:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    return res
+      .status(500)
+      .json({ success: false, message: "Server error", error: error.message });
   }
 };
-
-// In your addRide function:
 const addRide = async (req, res) => {
   try {
+    // (1) Validate uploaded image
     if (!req.file) {
-      return res.status(400).json({ success: false, message: "Image is required" });
+      return res.status(400).json({
+        success: false,
+        message: "Image is required",
+      });
     }
 
-       const cfg = await CommissionModel.findOne({ active: true }).sort({ effectiveFrom: -1 });
-      const rate = cfg?.rate ?? 0;
+    // (2) Find active commission config
+    const commissionConfig = await prisma.commissionConfig.findFirst({
+      where: { active: true },
+      orderBy: { effectiveFrom: "desc" },
+    });
+    const rate = commissionConfig?.rate ?? 0;
 
-    // 1) Geocode addresses
+    // (3) Geocode pickup & destination
     const pickupCoords = await geocodeAddress(req.body.pickup);
-    const destCoords   = await geocodeAddress(req.body.destination);
-    const { currency } = req.body;
-    
-      const user = req.user;
-    if (!user || !user.roles.includes("driver")) {
-      return res.status(403).json({ success: false, message: "Access denied: Not a driver." });
+    const destCoords = await geocodeAddress(req.body.destination);
+
+    // (4) Verify driver role
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
 
-    const { capacity, maxPassengers } = req.body;
+    const isDriver = await prisma.userRoleAssignment.findFirst({
+      where: { userId: user.id, role: "DRIVER" },
+    });
+    if (!isDriver) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Access denied: Not a driver." });
+    }
+
+    // (5) Validate capacity and passenger limits
+    const capacity = Number(req.body.capacity);
+    const maxPassengers = Number(req.body.maxPassengers);
+
     if (maxPassengers > capacity) {
       return res.status(400).json({
         success: false,
-        message: "maxPassengers cannot exceed total capacity"
+        message: "maxPassengers cannot exceed total capacity",
       });
     }
-    const ride = new RideModel({
-      pickup: req.body.pickup,
-      destination: req.body.destination,
-      price: Number(req.body.price),
-      currency, 
-      description: req.body.description,
-      selectedDate: new Date(req.body.selectedDate),
-      selectedTime: req.body.selectedTime,
-      capacity:      Number(capacity),
-      maxPassengers: Number(maxPassengers),
-      imageUrl: req.file.path,
-      type: req.body.type,
-      status: req.body.status || "pending approval",
-      driver: req.user.id,
-      pickupLocation: {
-        type: "Point",
-        coordinates: [pickupCoords.longitude, pickupCoords.latitude],
-      },
-      destinationLocation: {
-        type: "Point",
-        coordinates: [destCoords.longitude, destCoords.latitude],
-      },
-      commissionRate: rate,
-      commissionAmount: +(Number(req.body.price) * rate).toFixed(2),
-      payoutAmount: +(Number(req.body.price) * (1 - rate)).toFixed(2),
 
+    // (6) Create ride
+    const price = Number(req.body.price);
+    const commissionAmount = +(price * rate).toFixed(2);
+    const payoutAmount = +(price * (1 - rate)).toFixed(2);
+
+    const ride = await prisma.ride.create({
+      data: {
+        pickup: req.body.pickup,
+        destination: req.body.destination,
+        pickupNorm: req.body.pickup.trim().toLowerCase(),
+        destinationNorm: req.body.destination.trim().toLowerCase(),
+        price,
+        currency: req.body.currency || "USD",
+        description: req.body.description,
+        selectedDate: new Date(req.body.selectedDate),
+        selectedTime: req.body.selectedTime,
+        capacity,
+        maxPassengers,
+        imageUrl: req.file.path,
+        type: req.body.type,
+        status: req.body.status?.toUpperCase() || "PENDING_APPROVAL",
+        driverId: user.id,
+        commissionRate: rate,
+        commissionAmount,
+        payoutAmount,
+      },
+      include: {
+        driver: {
+          select: { id: true, name: true, email: true, avatar: true },
+        },
+      },
     });
 
-    // 3) Save (triggers validate → normalize → save)
-    await ride.save();
-    // convert to plain object so virtuals + defaults are in the JSON
-    const rideObj = ride.toObject({ getters: true, versionKey: false });
-    return res.json({
+    // (7) Respond
+    return res.status(201).json({
       success: true,
       message: "Ride added successfully",
-      ride: rideObj
+      ride,
     });
   } catch (error) {
-    console.error("Error in addRide:", error);
-    if (error.name === "ValidationError") {
-      const msgs = Object.values(error.errors).map(e => e.message);
-      return res.status(400).json({ success: false, message: msgs.join("; ") });
+    console.error("❌ Error in addRide:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Internal Server Error",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * GET /api/driver/commission-rate
+ * Retrieves the current active commission rate.
+ */
+const getCommissionRate = async (req, res) => {
+  const driverId = req.user?.id;
+  try {
+    const config = await prisma.commissionConfig.findFirst({
+      where: { active: true },
+      orderBy: { effectiveFrom: "desc" },
+    });
+
+    if (!config) {
+      return res.json({ success: true, rate: 0 });
     }
-    return res.status(500).json({ success: false, message: "Internal Server Error" });
+
+          const log = await logActivity({
+            userId: driverId,
+            action: "GET_COMMISSION_RATE SUCCESS",
+            description: `Fetched current commission rate of ${config.rate * 100}%`,
+            req,
+          });
+
+            const io = req.app.get("io");
+          if (io && log) {
+            io.emit("new_activity_log", log);
+          }
+
+    return res.json({ success: true, rate: config.rate });
+  } catch (err) {
+    logger.error("Error fetching commission rate:", err);
+          const log = await logActivity({
+            userId: driverId,
+            action: "🔴GET_COMMISSION_RATE_FAILED",
+            description: `Failed to fetch commission rate: ${err.message}`,
+            req,
+          });
+
+            const io = req.app.get("io");
+          if (io && log) {
+            io.emit("new_activity_log", log);
+          }
+
+    return res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
 const getCurrentRide = async (req, res) => {
   try {
     const user = req.user;
-    if (!user || !user.roles.includes("driver")) {
-      return res.status(403).json({ success: false, message: "Access denied: Not a driver." });
+
+    // (1) Check if driver
+    if (!user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
-    // Query for a ride in various statuses
-    const ride = await RideModel.findOne({
-      driver: user._id,
-      status: { $in: ["assigned", "in progress", "approved", "pending approval"] },
+
+    const isDriver = await prisma.userRoleAssignment.findFirst({
+      where: { userId: user.id, role: "DRIVER" },
     });
-    if (!ride) {
-      return res.status(200).json({ success: true, ride: null, message: "No active ride found." });
+
+    if (!isDriver) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Access denied: Not a driver." });
     }
-    ride.save()
+
+    // (2) Query for one active ride
+    const activeStatuses = [
+      "ASSIGNED",
+      "IN_PROGRESS",
+      "APPROVED",
+      "PENDING_APPROVAL",
+    ];
+
+    const ride = await prisma.ride.findFirst({
+      where: {
+        driverId: user.id,
+        status: { in: activeStatuses },
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        driver: {
+          select: { id: true, name: true, email: true, avatar: true },
+        },
+      },
+    });
+
+    if (!ride) {
+      return res.status(200).json({
+        success: true,
+        ride: null,
+        message: "No active ride found.",
+      });
+    }
+
     return res.status(200).json({ success: true, ride });
   } catch (error) {
-    console.error("Error fetching current ride:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    console.error("❌ Error fetching current ride:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
   }
 };
-
 const getCurrentRides = async (req, res) => {
   try {
     const user = req.user;
-    if (!user || !user.roles.includes("driver")) {
-      return res.status(403).json({ success: false, message: "Access denied: Not a driver." });
+
+    // (1) Check if driver
+    if (!user) {
+      return res.status(401).json({ success: false, message: "Unauthorized" });
     }
-    // Retrieve all active rides assigned to the driver
-    const rides = await RideModel.find({
-      driver: user._id,
-      status: { $in: ["assigned"] },
+
+    const isDriver = await prisma.userRoleAssignment.findFirst({
+      where: { userId: user.id, role: "DRIVER" },
     });
-    if (!rides || rides.length === 0) {
-      // Return 200 with an empty array instead of a 404 error
-      return res.status(200).json({ success: true, rides: [], message: "No active rides found." });
+
+    if (!isDriver) {
+      return res
+        .status(403)
+        .json({ success: false, message: "Access denied: Not a driver." });
+    }
+
+    // (2) Query all active rides assigned to driver
+    const rides = await prisma.ride.findMany({
+      where: {
+        driverId: user.id,
+        status: { in: ["ASSIGNED"] },
+      },
+      orderBy: { createdAt: "desc" },
+      include: {
+        driver: {
+          select: { id: true, name: true, email: true, avatar: true },
+        },
+      },
+    });
+
+    if (!rides.length) {
+      return res.status(200).json({
+        success: true,
+        rides: [],
+        message: "No active rides found.",
+      });
     }
 
     return res.status(200).json({ success: true, rides });
   } catch (error) {
-    console.error("Error fetching current rides:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    console.error("❌ Error fetching current rides:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Server error",
+      error: error.message,
+    });
   }
 };
 const getDriverBookings = async (req, res) => {
-    try {
-        const driverId = req.user._id;
+  try {
+    const driverId = req.user.id;
 
-        const bookings = await BookingModel.aggregate([
-            {
-                $unwind: "$rides"
-            },
-            
-            {
-                $match: {
-                    "rides.driver": driverId,
-                    "rides.status": "approved"
-                }
-            },
-            
-            {
-                $lookup: {
-                    from: "users",
-                    localField: "userId",
-                    foreignField: "_id",
-                    as: "user"
-                }
-            },
-            
-            {
-                $unwind: "$user"
-            },
-            
-            {
-                $group: {
-                    _id: "$_id", 
-                    userId: { $first: "$user" },
-                    totalAmount: { $first: "$totalAmount" },
-                    bookingStatus: { $first: "$status" },
-                    rides: { $push: "$rides" } 
-                }
-            },
-            
-            {
-                $project: {
-                    _id: 1,
-                    userId: {
-                        _id: "$userId._id",
-                        name: "$userId.name",
-                    },
-                    totalAmount: 1,
-                    bookingStatus: 1,
-                    rides: 1
-                }
-            }
-        ]);
+    // Find all bookings that include rides belonging to the driver
+    const bookings = await prisma.booking.findMany({
+      where: {
+        rides: {
+          // We store rides as JSON, so we filter manually after fetch
+          not: prisma.JsonNull,
+        },
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
 
-        return res.status(200).json({ success: true, data: bookings });
+    // Filter rides manually (since Prisma can't filter inside JSON easily)
+    const driverBookings = bookings
+      .map((booking) => {
+        const driverRides = (Array.isArray(booking.rides) ? booking.rides : [])
+          .filter(
+            (ride) =>
+              ride.driver === driverId && ride.status?.toLowerCase() === "approved"
+          );
 
-    } catch (err) {
-        console.error("Error fetching driver bookings:", err);
-        return res.status(500).json({ success: false, message: "Server error." });
-    }
+        if (driverRides.length === 0) return null;
+
+        return {
+          id: booking.id,
+          user: {
+            id: booking.user.id,
+            name: booking.user.name,
+          },
+          totalAmount: booking.amount,
+          bookingStatus: booking.status,
+          rides: driverRides,
+        };
+      })
+      .filter(Boolean); // remove nulls
+
+    return res.status(200).json({ success: true, data: driverBookings });
+  } catch (error) {
+    console.error("Error fetching driver bookings:", error);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
 };
 
 const startRide = async (req, res) => {
-    try {
-        const { rideId } = req.params;
-        const driverId = req.user._id; 
+  try {
+    const { rideId } = req.params;
+    const driverId = req.user.id;
 
-        const booking = await BookingModel.findOne({ "rides._id": rideId });
+    // 1️⃣ Find the ride by ID and make sure the driver owns it
+    const ride = await prisma.ride.findUnique({
+      where: { id: Number(rideId) },
+      include: {
+        driver: true,
+      },
+    });
 
-        if (!booking) {
-            return res.status(404).json({ success: false, message: "Booking not found." });
-        }
-
-        const ride = booking.rides.id(rideId);
-
-        if (!ride) {
-            return res.status(404).json({ success: false, message: "Ride not found in booking." });
-        }
-        if (ride.driver.toString() !== driverId.toString()) {
-            return res.status(403).json({ success: false, message: "Not authorized for this ride." });
-        }
-
-        if (ride.status !== "approved") {
-            return res.status(400).json({ success: false, message: `Ride status is '${ride.status}', must be 'approved' to start.` });
-        }
-
-        ride.status = "in progress";
-
-        const allRidesApproved = booking.rides.every(r => r.status === "approved" || r.status === "in progress");
-        const anyRideInProgress = booking.rides.some(r => r.status === "in progress");
-
-        if (anyRideInProgress) {
-            booking.status = "in progress";
-        } else if (allRidesApproved) {
-             booking.status = "approved";
-        }
-
-          await booking.save();
-
-            io.to(booking.userId.toString()).emit('rideStarted', { 
-                bookingId: booking._id.toString(),
-                rideId: ride._id.toString()
-            });
-        return res.status(200).json({ 
-            success: true, 
-            message: "Ride started successfully.",
-            booking 
-        });
-
-    } catch (err) {
-        console.error("Error starting ride:", err);
-        return res.status(500).json({ success: false, message: "Server error." });
+    if (!ride) {
+      return res.status(404).json({ success: false, message: "Ride not found." });
     }
+
+    if (ride.driverId !== driverId) {
+      return res.status(403).json({ success: false, message: "Not authorized for this ride." });
+    }
+
+    if (ride.status !== "APPROVED") {
+      return res.status(400).json({
+        success: false,
+        message: `Ride status is '${ride.status}', must be 'APPROVED' to start.`,
+      });
+    }
+
+    // 2️⃣ Update the ride to "IN_PROGRESS"
+    const updatedRide = await prisma.ride.update({
+      where: { id: ride.id },
+      data: {
+        status: "IN_PROGRESS",
+      },
+    });
+
+    // 3️⃣ Update the parent booking (if any)
+    const booking = await prisma.booking.findFirst({
+      where: {
+        rides: {
+          not: Prisma.JsonNull,
+        },
+      },
+    });
+
+    if (booking) {
+      // Update the JSON array’s ride status manually (in JS)
+      const updatedRides = booking.rides.map((r) =>
+        r.id === ride.id ? { ...r, status: "in progress" } : r
+      );
+
+      const anyRideInProgress = updatedRides.some((r) => r.status === "in progress");
+      const allRidesApproved = updatedRides.every(
+        (r) => r.status === "approved" || r.status === "in progress"
+      );
+
+      let newStatus = booking.status;
+      if (anyRideInProgress) newStatus = "IN_PROGRESS";
+      else if (allRidesApproved) newStatus = "APPROVED";
+
+      await prisma.booking.update({
+        where: { id: booking.id },
+        data: {
+          rides: updatedRides,
+          status: newStatus,
+        },
+      });
+
+      // 🔔 Emit socket event
+      io.to(String(booking.userId)).emit("rideStarted", {
+        bookingId: booking.id,
+        rideId: ride.id,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Ride started successfully.",
+      ride: updatedRide,
+    });
+  } catch (err) {
+    console.error("Error starting ride:", err);
+    return res.status(500).json({ success: false, message: "Server error." });
+  }
 };
 
 const completeRide = async (req, res) => {
   try {
-    const { bookingId } = req.params;
-    const driverId = req.user._id;
+    const { rideId } = req.params;
+    const driverId = req.user.id;
 
-    const booking = await BookingModel.findById(bookingId);
+    // 1️⃣ Find the ride
+    const ride = await prisma.ride.findUnique({
+      where: { id: Number(rideId) },
+    });
 
-    if (!booking || booking.driver.toString() !== driverId.toString()) {
-      return res.status(404).json({ message: 'Booking not found or not assigned to this driver.' });
+    if (!ride || ride.driverId !== driverId) {
+      return res
+        .status(404)
+        .json({ success: false, message: "Ride not found or not assigned to this driver." });
     }
 
-    if (booking.status !== 'in progress') {
-      return res.status(400).json({ message: 'Cannot complete a ride that is not in progress.' });
+    if (ride.status !== "IN_PROGRESS") {
+      return res.status(400).json({
+        success: false,
+        message: "Cannot complete a ride that is not in progress.",
+      });
     }
 
-    booking.status = 'completed';
-    // You might also calculate and set the final fare here
-    // booking.finalFare = ...
-    await booking.save();
+    // 2️⃣ Update ride status to completed
+    const updatedRide = await prisma.ride.update({
+      where: { id: ride.id },
+      data: { status: "COMPLETED" },
+    });
 
-    // Notify the user via Socket.IO
-    io.to(booking.user.toString()).emit('rideCompleted', { bookingId, fare: booking.amount });
+    // 3️⃣ Find related booking and update JSON + status
+    const booking = await prisma.booking.findFirst({
+      where: {
+        rides: {
+          not: Prisma.JsonNull,
+        },
+      },
+    });
 
-    res.status(200).json({ message: 'Ride completed successfully.', booking });
+    if (booking) {
+      const updatedRides = booking.rides.map((r) =>
+        r.id === ride.id ? { ...r, status: "completed" } : r
+      );
+
+      const allCompleted = updatedRides.every((r) => r.status === "completed");
+
+      await prisma.booking.update({
+        where: { id: booking.id },
+        data: {
+          rides: updatedRides,
+          status: allCompleted ? "COMPLETED" : booking.status,
+        },
+      });
+
+      io.to(String(booking.userId)).emit("rideCompleted", {
+        bookingId: booking.id,
+        rideId: ride.id,
+        fare: booking.amount,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: "Ride completed successfully.",
+      ride: updatedRide,
+    });
   } catch (error) {
-    console.error('Error completing ride:', error);
-    res.status(500).json({ message: 'Server error.', error });
+    console.error("Error completing ride:", error);
+    return res.status(500).json({ success: false, message: "Server error." });
   }
 };
-
 // POST /api/driver/ride/cancel
 // Allows a driver to cancel a ride if it hasn't been completed.
 const cancelRide = async (req, res) => {
   try {
-    const driver = req.driver;
-    if (!driver) {
+    const driverId = req.user?.id;
+    if (!driverId) {
       return res.status(403).json({ success: false, message: "Access denied: Not a driver." });
     }
+
     const { rideId } = req.body;
-    const ride = await RideModel.findById(rideId);
+
+    const ride = await prisma.ride.findUnique({ where: { id: Number(rideId) } });
     if (!ride) {
       return res.status(404).json({ success: false, message: "Ride not found." });
     }
-    if (ride.driver.toString() !== driver._id.toString()) {
-      return res.status(403).json({ success: false, message: "Not authorized to update this ride." });
+
+    if (ride.driverId !== driverId) {
+      return res.status(403).json({ success: false, message: "Not authorized to cancel this ride." });
     }
-    // Prevent cancelling a ride that is already completed.
-    if (ride.status === "completed") {
+
+    if (ride.status === "COMPLETED") {
       return res.status(400).json({ success: false, message: "Completed rides cannot be cancelled." });
     }
-    ride.status = "declined";
-    await ride.save();
-    return res.status(200).json({ success: true, message: "Ride cancelled successfully.", ride });
+
+    const updatedRide = await prisma.ride.update({
+      where: { id: ride.id },
+      data: { status: "CANCELLED" },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Ride cancelled successfully.",
+      ride: updatedRide,
+    });
   } catch (error) {
     console.error("Error cancelling ride:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    return res.status(500).json({ success: false, message: "Server error." });
   }
 };
 
 const getUpcomingRides = async (req, res) => {
   try {
-    const user = req.user;
-    if (!user || !user.roles.includes("driver")) {
+    const driverId = req.user?.id;
+    if (!driverId) {
       return res.status(403).json({ success: false, message: "Access denied: Not a driver." });
     }
+
     const now = new Date();
-    // Retrieve rides scheduled for the future; you might adjust statuses as needed
-    const rides = await RideModel.find({
-      driver: user._id,
-      status: { $in: [ "scheduled"] },
-      selectedDate: { $gte: now }
+
+    const rides = await prisma.ride.findMany({
+      where: {
+        driverId,
+        status: "SCHEDULED",
+        selectedDate: { gte: now },
+      },
+      orderBy: { selectedDate: "asc" },
     });
-    return res.status(200).json({ success: true, rides });
+
+    return res.status(200).json({
+      success: true,
+      rides,
+    });
   } catch (error) {
     console.error("Error fetching upcoming rides:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    return res.status(500).json({ success: false, message: "Server error." });
   }
 };
 
-
 const getDriverEarnings = async (req, res) => {
   try {
-    const user = req.user;
-    if (!user || !user.roles.includes("driver")) {
+    const driverId = req.user?.id;
+    if (!driverId) {
       return res.status(403).json({ success: false, message: "Access denied: Not a driver." });
     }
-    
+
     const now = new Date();
     const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay()); // assuming Sunday start; adjust as needed
+    const startOfWeek = new Date(startOfDay);
+    startOfWeek.setDate(startOfDay.getDate() - startOfDay.getDay());
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-    
-    // Aggregate earnings from rides completed in each period
-    const [todayResult, weekResult, monthResult] = await Promise.all([
-      RideModel.aggregate([
-        { $match: {
-            driver: user._id,
-            status: "completed",
-            updatedAt: { $gte: startOfDay, $lt: new Date(startOfDay.getTime() + 24*60*60*1000) }
-          }
+
+    const [today, week, month] = await Promise.all([
+      prisma.ride.aggregate({
+        _sum: { price: true },
+        where: {
+          driverId,
+          status: "COMPLETED",
+          updatedAt: {
+            gte: startOfDay,
+            lt: new Date(startOfDay.getTime() + 24 * 60 * 60 * 1000),
+          },
         },
-        { $group: { _id: null, total: { $sum: "$price" } } }
-      ]),
-      RideModel.aggregate([
-        { $match: {
-            driver: user._id,
-            status: "completed",
-            updatedAt: { $gte: startOfWeek, $lt: new Date(startOfWeek.getTime() + 7*24*60*60*1000) }
-          }
+      }),
+      prisma.ride.aggregate({
+        _sum: { price: true },
+        where: {
+          driverId,
+          status: "COMPLETED",
+          updatedAt: {
+            gte: startOfWeek,
+            lt: new Date(startOfWeek.getTime() + 7 * 24 * 60 * 60 * 1000),
+          },
         },
-        { $group: { _id: null, total: { $sum: "$price" } } }
-      ]),
-      RideModel.aggregate([
-        { $match: {
-            driver: user._id,
-            status: "completed",
-            updatedAt: { $gte: startOfMonth, $lt: new Date(now.getFullYear(), now.getMonth()+1, 1) }
-          }
+      }),
+      prisma.ride.aggregate({
+        _sum: { price: true },
+        where: {
+          driverId,
+          status: "COMPLETED",
+          updatedAt: {
+            gte: startOfMonth,
+            lt: new Date(now.getFullYear(), now.getMonth() + 1, 1),
+          },
         },
-        { $group: { _id: null, total: { $sum: "$price" } } }
-      ])
+      }),
     ]);
 
-    const todayEarnings = todayResult.length > 0 ? todayResult[0].total : 0;
-    const weekEarnings = weekResult.length > 0 ? weekResult[0].total : 0;
-    const monthEarnings = monthResult.length > 0 ? monthResult[0].total : 0;
-    
     return res.status(200).json({
       success: true,
       earnings: {
-        today: todayEarnings,
-        week: weekEarnings,
-        month: monthEarnings,
+        today: today._sum.price || 0,
+        week: week._sum.price || 0,
+        month: month._sum.price || 0,
       },
     });
   } catch (error) {
     console.error("Error fetching driver earnings:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    return res.status(500).json({ success: false, message: "Server error." });
   }
 };
 
 const getPerformanceMetrics = async (req, res) => {
   try {
     const user = req.user;
-    if (!user || !user.roles.includes("driver")) {
+    const roles = user.roleAssignments.map((r) => r.role);
+    if (!user || !roles?.includes("DRIVER")) {
       return res.status(403).json({ success: false, message: "Access denied: Not a driver." });
     }
 
-    const metrics = await RideModel.aggregate([
-      {
-        $match: {
-          driver: user._id,
-          status: "completed",
-        },
-      },
-      {
-        $group: {
-          _id: null,
-          totalCompleted: { $sum: 1 },
-          totalFare: { $sum: "$price" },
-          avgFare: { $avg: "$price" },
-          avgDuration: { $avg: "$duration" }, // Assumes a "duration" field (in minutes) exists
-        },
-      },
-    ]);
+    const driverId = user.id;
 
-    let result = {
-      totalCompleted: 0,
-      averageFare: 0,
-      averageDuration: null,
+    const metrics = await prisma.ride.aggregate({
+      _count: { _all: true },
+      _avg: { price: true },
+      _sum: { price: true },
+      where: {
+        driverId,
+        status: "COMPLETED",
+      },
+    });
+
+    const result = {
+      totalCompleted: metrics._count._all || 0,
+      averageFare: metrics._avg.price || 0,
+      averageDuration:  null,
+      totalFare: metrics._sum.price || 0,
     };
-
-    if (metrics.length > 0) {
-      result.totalCompleted = metrics[0].totalCompleted;
-      result.averageFare = metrics[0].avgFare;
-      result.averageDuration = metrics[0].avgDuration; // May be null if duration isn't stored
-    }
 
     return res.status(200).json({ success: true, metrics: result });
   } catch (error) {
     console.error("Error fetching performance metrics:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    return res.status(500).json({ success: false, message: "Server error." });
   }
 };
-
 const getDriverHistory = async (req, res) => {
   try {
-    const driver = req.driver;
-    if (!driver) {
+    const driver = req.user;
+    if (!driver || !driver.roles?.includes("DRIVER")) {
       return res.status(403).json({ success: false, message: "Access denied: Not a driver." });
     }
-    // Retrieve rides that are either completed or cancelled
-    const historyRides = await RideModel.find({
-      driver: driver._id,
-      status: { $in: ["completed", "Cancelled"] }
-    }).sort({ selectedDate: -1 });
-    
-    return res.status(200).json({ success: true, rides: historyRides });
+
+    const rides = await prisma.ride.findMany({
+      where: {
+        driverId: driver.id,
+        status: { in: ["COMPLETED", "CANCELLED"] },
+      },
+      orderBy: { selectedDate: "desc" },
+    });
+
+    return res.status(200).json({ success: true, rides });
   } catch (error) {
     console.error("Error fetching ride history:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    return res.status(500).json({ success: false, message: "Server error." });
   }
 };
-
 const getDriverEarningsReport = async (req, res) => {
   try {
     const user = req.user;
-    if (!user || !user.roles.includes("driver")) {
+    if (!user || !user.roles?.includes("DRIVER")) {
       return res.status(403).json({ success: false, message: "Access denied: Not a driver." });
     }
+
+    const driverId = user.id;
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    
-    // Aggregate earnings per day for the last 30 days
-    const report = await RideModel.aggregate([
-      {
-        $match: {
-          driver: driver._id,
-          status: "completed",
-          updatedAt: { $gte: thirtyDaysAgo }
-        }
+
+    // Get all completed rides in last 30 days
+    const rides = await prisma.ride.findMany({
+      where: {
+        driverId,
+        status: "COMPLETED",
+        updatedAt: { gte: thirtyDaysAgo },
       },
-      {
-        $group: {
-          _id: { $dateToString: { format: "%Y-%m-%d", date: "$updatedAt" } },
-          totalEarnings: { $sum: "$price" },
-          rideCount: { $sum: 1 }
-        }
+      select: {
+        price: true,
+        updatedAt: true,
       },
-      { $sort: { _id: 1 } }
-    ]);
-    
+    });
+
+    // Group earnings per day
+    const reportMap = {};
+    rides.forEach((r) => {
+      const dateKey = r.updatedAt.toISOString().split("T")[0];
+      if (!reportMap[dateKey]) {
+        reportMap[dateKey] = { totalEarnings: 0, rideCount: 0 };
+      }
+      reportMap[dateKey].totalEarnings += r.price;
+      reportMap[dateKey].rideCount += 1;
+    });
+
+    const report = Object.entries(reportMap)
+      .map(([date, { totalEarnings, rideCount }]) => ({
+        date,
+        totalEarnings,
+        rideCount,
+      }))
+      .sort((a, b) => new Date(a.date) - new Date(b.date));
+
     return res.status(200).json({ success: true, report });
   } catch (error) {
     console.error("Error fetching earnings report:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    return res.status(500).json({ success: false, message: "Server error." });
   }
 };
 
 // In DriverController.js (or SupportController.js)
 const submitSupportRequest = async (req, res) => {
   try {
-    const driver = req.driver;
-    if (!driver) {
+    const driver = req.user;
+    if (!driver || !driver.roles?.includes("DRIVER")) {
       return res.status(403).json({ success: false, message: "Access denied: Not a driver." });
     }
-    
+
     const { subject, message } = req.body;
     if (!subject || !message) {
       return res.status(400).json({ success: false, message: "Subject and message are required." });
     }
-    
-    // In production, save this support request to a database or forward it via email.
-    // For now, we just log it.
-    console.log(`Support request from driver ${driver._id} (${driver.name}):`);
+
+    // Optional: log to a future SupportTicket table or admin notification
+    console.log(`📩 Support request from driver ${driver.id} (${driver.name})`);
     console.log(`Subject: ${subject}`);
     console.log(`Message: ${message}`);
-    
-    return res.status(200).json({ success: true, message: "Support request submitted successfully." });
+
+    await prisma.notification.create({
+       data: {
+         userId: driver.id,
+         title: `Support Request: ${subject}`,
+         body: message,
+         type: "SYSTEM",
+         status: "PENDING",
+       },
+     });
+
+    return res.status(200).json({
+      success: true,
+      message: "Support request submitted successfully.",
+    });
   } catch (error) {
     console.error("Error submitting support request:", error);
     return res.status(500).json({ success: false, message: "Server error." });
   }
 };
-
-const updateRideFare = async (req, res) => {
-  try {iver
-    const driver = req.driver; 
-    if (!driver) {
-      return res.status(403).json({ success: false, message: "Access denied: Not a driver." });
+ const updateRideFare = async (req, res) => {
+  try {
+    const driver = req.user; // using req.user instead of req.driver for consistency
+    if (!driver || !driver.roles?.includes("DRIVER")) {
+      return res.status(403).json({
+        success: false,
+        message: "Access denied: Not a driver.",
+      });
     }
+
     const { rideId, newFare } = req.body;
     if (!rideId || newFare == null) {
-      return res.status(400).json({ success: false, message: "Ride ID and new fare are required." });
+      return res.status(400).json({
+        success: false,
+        message: "Ride ID and new fare are required.",
+      });
     }
-    
-    // Find the ride
-    const ride = await RideModel.findById(rideId);
+
+    // Find the ride by ID
+    const ride = await prisma.ride.findUnique({
+      where: { id: Number(rideId) },
+    });
+
     if (!ride) {
-      return res.status(404).json({ success: false, message: "Ride not found." });
+      return res
+        .status(404)
+        .json({ success: false, message: "Ride not found." });
     }
-    
+
     // Ensure the ride is assigned to this driver
-    if (ride.driver.toString() !== driver._id.toString()) {
-      return res.status(403).json({ success: false, message: "Not authorized to update this ride." });
+    if (ride.driverId !== driver.id) {
+      return res.status(403).json({
+        success: false,
+        message: "Not authorized to update this ride.",
+      });
     }
-    
-    // Optionally, add a check to only allow fare updates when ride status is 'assigned' or 'scheduled'
-    if (!["assigned", "scheduled"].includes(ride.status.toLowerCase())) {
-      return res.status(400).json({ success: false, message: "Fare cannot be updated at this stage." });
+
+    // Only allow fare updates when ride is ASSIGNED or SCHEDULED
+    if (
+      ![RideStatus.ASSIGNED, RideStatus.SCHEDULED].includes(ride.status)
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Fare cannot be updated at this stage.",
+      });
     }
-    
-    // Update the fare
-    ride.price = newFare;
-    await ride.save();
-    
-    return res.status(200).json({ success: true, message: "Fare updated successfully", ride });
+
+    // Record fare change in FareHistory
+    await prisma.fareHistory.create({
+      data: {
+        rideId: ride.id,
+        previousFare: ride.price,
+        updatedFare: Number(newFare),
+        calculatedExpectedFare: ride.price,
+      },
+    });
+
+    // Update the fare in the ride
+    const updatedRide = await prisma.ride.update({
+      where: { id: ride.id },
+      data: { price: Number(newFare) },
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: "Fare updated successfully.",
+      ride: updatedRide,
+    });
   } catch (error) {
     console.error("Error updating ride fare:", error);
-    return res.status(500).json({ success: false, message: "Server error." });
+    return res.status(500).json({
+      success: false,
+      message: "Server error.",
+    });
   }
 };
 
 const driverRespondToRide = async (req, res) => {
   try {
     const { rideId, response } = req.body;
-    const driverProfile        = req.driverProfile;
-    const user                 = req.user;
+    const driverProfile = req.driverProfile;
+    const user = req.user;
 
     if (!driverProfile || !user) {
       return res
@@ -1122,151 +1884,126 @@ const driverRespondToRide = async (req, res) => {
         .json({ success: false, message: "Driver authentication failed" });
     }
 
-    // 1) Find the master ride (to get norm fields & date)
-    const masterRide = await RideModel.findById(rideId).lean();
-    if (!masterRide) {
+    // 1️⃣ Find ride
+    const ride = await prisma.ride.findUnique({ where: { id: Number(rideId) } });
+    if (!ride)
       return res
         .status(404)
         .json({ success: false, message: "Ride not found" });
-    }
 
-    // 2) Find the booking & subdoc
-    const booking = await BookingModel.findOne({ "rides._id": rideId });
-    if (!booking) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Booking not found" });
-    }
-    const ride = booking.rides.id(rideId);
-    if (!ride) {
-      return res
-        .status(404)
-        .json({ success: false, message: "Ride not found in booking" });
-    }
-
-    // 3) Verify driver owns it
-    if (ride.driver.toString() !== user._id.toString()) {
+    // 2️⃣ Check driver owns the ride
+    if (ride.driverId !== user.id)
       return res
         .status(403)
         .json({ success: false, message: "Not authorized for this ride" });
-    }
 
-    // 4) Only pending rides can be updated
-    if (ride.status !== "pending approval") {
+    // 3️⃣ Only pending approval rides can be updated
+    if (ride.status !== "PENDING_APPROVAL") {
       return res.status(400).json({
         success: false,
-        message: `Ride has already been ${ride.status}`,
+        message: `Ride has already been ${ride.status.toLowerCase()}`,
       });
     }
 
-      const approvedDocs = await BookingModel.aggregate([
-        { $unwind: "$rides" },
-        { $match: {
-            "rides._id": rideId,
-            "rides.status": "approved",
-            "rides.driver": user._id.toString()
-        }},
-        { $group: {
-            _id: null,
-            totalSeats: { $sum: "$rides.passengers" }
-        }}
-      ]);
-      const approvedSeats = approvedDocs[0]?.totalSeats || 0;
-
-
-
-      // block over‑capacity using **ride.maxPassengers**
-      if (
-        response === "approved" &&
-        approvedSeats + ride.passengers > ride.maxPassengers
-      ) {
-        return res.status(400).json({
-          success: false,
-          message: "Cannot approve — ride is full"
-        });
-      }
-
-    // 7) Update status
-    if (response === "approved") {
-      ride.status = "approved";
-    } else if (response === "declined") {
-      ride.status = "declined";
-    } else {
-      return res
-        .status(400)
-        .json({ success: false, message: "Invalid response" });
-    }
-
-    // 8) Save booking & recalc its overall status
-    await booking.save();
-    const total     = booking.rides.length;
-    const approved  = booking.rides.filter(r => r.status === "approved")
-                                    .length;
-    booking.status = approved === total
-      ? "approved"
-      : approved > 0
-        ? "partially approved"
-        : "pending approval";
-    await booking.save();
-
-  const bookingUser = await UserModel.findById(booking.userId);
-  const title = response === "approved"
-      ? "Ride Approved"
-      : "Ride Declined";
-  const body = response === "approved"
-      ? `Hi ${bookingUser.name}, your ride from ${ride.pickup} to ${ride.destination} is approved.`
-      : `Hi ${bookingUser.name}, your ride from ${ride.pickup} to ${ride.destination} was declined.`;
-
-await notificationQueue.add('ride-response', {
-    userId: booking.userId.toString(),
-    title, 
-    body,  
-    data: { rideId: ride._id.toString(), bookingId: booking._id.toString(), type: response },
-    topic: null,
-    scheduledAt: new Date()
-});
-    // 9) Notify the booked user
-    io.to(booking.userId.toString())
-      .emit("rideResponseUpdate", { ride, booking, response });
-
-      // later when broadcasting "rideFull":
-      if (
-        response === "approved" &&
-        approvedSeats + ride.passengers === ride.maxPassengers
-      ) {
-        const dateKey = masterRide.selectedDate.toISOString().split("T")[0];
-        const room = `search_${masterRide.pickupNorm}_${masterRide.destinationNorm}_${dateKey}`;
-        io.to(room).emit("rideFull", { rideId });
-      }
-
-      if (bookingUser?.fcmToken) {
-        await sendPushNotification(bookingUser.fcmToken, {
-          title,             
-          body,            
-          data: {           
-            rideId:    ride._id.toString(),
-            bookingId: booking._id.toString(),
-            type:      title,
-            url:       "/myBookings",
-            tag:       "ride-response",  
-          }
-        });
-      }
-
-    await Notification.create({
-      userId: booking.userId,
-      message: body,
-      body: body,
-      title: title,
-      type: "ride-request",
-      isRead: false,
+    // 4️⃣ Count total approved rides for this driver (to block full)
+    const approvedCount = await prisma.ride.count({
+      where: {
+        driverId: user.id,
+        status: "APPROVED",
+      },
     });
 
-    // 12) Final response
+    if (
+      response === "approved" &&
+      approvedCount + 1 > driverProfile.maxPassengers
+    ) {
+      return res
+        .status(400)
+        .json({ success: false, message: "Cannot approve — ride is full" });
+    }
+
+    // 5️⃣ Update the ride status
+    const updatedRide = await prisma.ride.update({
+      where: { id: ride.id },
+      data: { status: response === "approved" ? "APPROVED" : "DECLINED" },
+    });
+
+    // 6️⃣ Notify the passenger
+    const booking = await prisma.booking.findFirst({
+      where: { rides: { path: "$[*].id", array_contains: ride.id } },
+    });
+
+    if (booking) {
+      const bookingUser = await prisma.user.findUnique({
+        where: { id: booking.userId },
+      });
+
+      const title =
+        response === "approved" ? "Ride Approved" : "Ride Declined";
+      const body =
+        response === "approved"
+          ? `Hi ${bookingUser.name}, your ride from ${ride.pickup} to ${ride.destination} has been approved.`
+          : `Hi ${bookingUser.name}, your ride from ${ride.pickup} to ${ride.destination} was declined.`;
+
+      // ➤ Queue notification job
+      await notificationQueue.add("ride-response", {
+        userId: booking.userId.toString(),
+        title,
+        body,
+        data: { rideId: ride.id.toString(), bookingId: booking.id.toString(), type: response },
+        scheduledAt: new Date(),
+      });
+
+      // ➤ Emit via Socket.IO
+      io.to(booking.userId.toString()).emit("rideResponseUpdate", {
+        ride: updatedRide,
+        response,
+      });
+
+      // ➤ Send FCM push
+      if (bookingUser?.fcmToken) {
+        await sendPushNotification(bookingUser.fcmToken, {
+          title,
+          body,
+          data: {
+            rideId: ride.id.toString(),
+            bookingId: booking.id.toString(),
+            type: title,
+            url: "/myBookings",
+            tag: "ride-response",
+          },
+        });
+      }
+
+      // ➤ Create Notification record
+      await prisma.notification.create({
+        data: {
+          userId: booking.userId,
+          rideId: ride.id,
+          title,
+          body,
+          message: body,
+          type: "RIDE_RESPONSE",
+        },
+      });
+    }
+
+    // 7️⃣ Broadcast if ride now full
+    const totalApproved = await prisma.ride.count({
+      where: { driverId: user.id, status: "APPROVED" },
+    });
+
+    if (response === "approved" && totalApproved >= driverProfile.maxPassengers) {
+      const room = `search_${ride.pickupNorm}_${ride.destinationNorm}_${ride.selectedDate
+        .toISOString()
+        .split("T")[0]}`;
+      io.to(room).emit("rideFull", { rideId: ride.id });
+    }
+
     return res.status(200).json({
       success: true,
       message: `Ride ${response} successfully`,
-      booking,
+      ride: updatedRide,
     });
   } catch (err) {
     console.error("Error in driverRespondToRide:", err);
@@ -1274,25 +2011,75 @@ await notificationQueue.add('ride-response', {
   }
 };
 
-export const arriveAtPickup = async (req, res) => {
-  const { rideId } = req.body;
-  // find booking & ride subdoc
-  const booking = await BookingModel.findOne({ "rides._id": rideId });
-  if (!booking) return res.status(404).json({ success: false, message: "Ride not found" });
+const arriveAtPickup = async (req, res) => {
+  try {
+    const { rideId } = req.body;
 
-  const ride = booking.rides.id(rideId);
-  ride.status = "arrived";
-  booking.status = "driver_en_route";
-  await booking.save();
+    const ride = await prisma.ride.findUnique({ where: { id: Number(rideId) } });
+    if (!ride)
+      return res
+        .status(404)
+        .json({ success: false, message: "Ride not found" });
 
-  // notify user and driver
-  io.to(booking.userId.toString()).emit("rideArrived", { rideId });
-  io.to(ride.driver.toString()).emit("arrivedConfirmed", { rideId });
+    // Update ride + related booking
+    const updatedRide = await prisma.ride.update({
+      where: { id: ride.id },
+      data: { status: "ARRIVED" },
+    });
 
-  res.json({ success: true, message: "Driver has arrived at pickup" });
+    await prisma.booking.updateMany({
+      where: { rides: { path: "$[*].id", array_contains: ride.id } },
+      data: { status: "DRIVER_EN_ROUTE" },
+    });
+
+    // Emit socket updates
+    io.to(updatedRide.driverId.toString()).emit("arrivedConfirmed", { rideId });
+    io.to(updatedRide.driverId.toString()).emit("rideArrived", { rideId });
+
+    // Send push to passenger
+    const booking = await prisma.booking.findFirst({
+      where: { rides: { path: "$[*].id", array_contains: ride.id } },
+    });
+
+    if (booking) {
+      const bookingUser = await prisma.user.findUnique({
+        where: { id: booking.userId },
+      });
+
+      if (bookingUser?.fcmToken) {
+        await sendPushNotification(bookingUser.fcmToken, {
+          title: "Driver Arrived",
+          body: `Your driver has arrived at ${ride.pickup}`,
+          data: {
+            rideId: ride.id.toString(),
+            bookingId: booking.id.toString(),
+            url: "/myBookings",
+            tag: "driver-arrived",
+          },
+        });
+      }
+
+      await prisma.notification.create({
+        data: {
+          userId: booking.userId,
+          rideId: ride.id,
+          title: "Driver Arrived",
+          body: `Your driver has arrived at ${ride.pickup}`,
+          type: "RIDE_RESPONSE",
+        },
+      });
+    }
+
+    return res.json({
+      success: true,
+      message: "Driver has arrived at pickup",
+      ride: updatedRide,
+    });
+  } catch (err) {
+    console.error("Error in arriveAtPickup:", err);
+    return res.status(500).json({ success: false, message: "Server error" });
+  }
 };
-
-
 const getPendingRideRequests = async (req, res) => {
   try {
     const driverProfile = req.driverProfile;
@@ -1302,33 +2089,51 @@ const getPendingRideRequests = async (req, res) => {
       return res.status(401).json({ success: false, message: "Driver authentication failed" });
     }
 
-    console.log("✅ Getting pending requests for driver:", user._id);
+    console.log("✅ Getting pending requests for driver:", user.id);
 
-    // ✅ FIX: Look for bookings with rides assigned to this driver that need approval
-    const bookings = await BookingModel.find({
-      "rides.driver": user._id.toString(),
-      "rides.status": "pending approval"
-    })
-    .populate('userId', 'name email phone')  // Populate user who made the booking
-    .sort({ createdAt: -1 });
+    // ✅ Find all bookings with rides belonging to this driver that need approval
+    const bookings = await prisma.booking.findMany({
+      where: {
+        rides: {
+          some: {
+            driverId: user.id,
+            status: "pending approval"
+          }
+        }
+      },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+            phone: true
+          }
+        },
+        rides: true
+      },
+      orderBy: {
+        createdAt: "desc"
+      }
+    });
 
-    // Extract only the rides that belong to this driver and need approval
+    // ✅ Extract rides belonging to this driver and still pending approval
     const pendingRides = bookings.flatMap(booking => {
-      const driverRides = booking.rides.filter(ride => 
-        ride.driver === user._id.toString() && 
-        ride.status === "pending approval"
+      const driverRides = booking.rides.filter(
+        ride =>
+          ride.driverId === user.id &&
+          ride.status === "pending approval"
       );
-      
-      // Add booking context to each ride
+
       return driverRides.map(ride => ({
-        ...ride.toObject(),
-        bookingId: booking._id,
-        bookedBy: booking.userId,
+        ...ride,
+        bookingId: booking.id,
+        bookedBy: booking.user,
         bookingDate: booking.createdAt
       }));
     });
 
-    console.log(`Found ${pendingRides.length} pending ride requests for driver ${user._id}`);
+    console.log(`Found ${pendingRides.length} pending ride requests for driver ${user.id}`);
 
     return res.status(200).json({
       success: true,
@@ -1349,90 +2154,104 @@ const driverTokenRefresh = async (req, res) => {
 
   try {
     const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
-    const user = await UserModel.findById(decoded.id);
-    if (!user || !user.roles.includes("driver")) {
+
+    const user = await prisma.user.findUnique({
+      where: { id: decoded.id },
+      include: { 
+        roleAssignments: true, 
+        refreshTokens: true,
+        driverProfile: true 
+      }
+    });
+
+    if (!user || !user.roleAssignments.some(r => r.role === "DRIVER")) {
       return res.status(401).json({ message: "Driver not found." });
     }
-    // Find admin profile for completeness (optional)
-    const driverProfile = await DriverProfile.findOne({ user: user._id });
-    if (!driverProfile) {
+
+    if (!user.driverProfile) {
       return res.status(401).json({ message: "Driver profile not found." });
     }
 
+    // ✅ Validate refresh token
     let valid = false;
-    if (Array.isArray(user.refreshTokens)) {
-      for (const rt of user.refreshTokens) {
-        if (rt.revoked) continue;
-        if (rt.expiresAt && rt.expiresAt <= new Date()) continue;
-        if (await bcrypt.compare(refreshToken, rt.token)) {
-          valid = true;
-          break;
-        }
+    for (const rt of user.refreshTokens) {
+      if (rt.revoked) continue;
+      if (rt.expiresAt && rt.expiresAt <= new Date()) continue;
+      if (await bcrypt.compare(refreshToken, rt.token)) {
+        valid = true;
+        break;
       }
     }
 
     if (!valid) {
-      return res.status(401).json({ code: 'REFRESH_INVALID', message: "Invalid or expired refresh token." });
+      return res.status(401).json({ code: "REFRESH_INVALID", message: "Invalid or expired refresh token." });
     }
 
+    // ✅ Issue new tokens
     const newAccessToken = signAccessToken(user);
     const newRefreshToken = signRefreshToken(user);
     const newHashed = await bcrypt.hash(newRefreshToken, 10);
 
-    // Save new hashed refresh token (prune old/expired tokens)
-    if(!Array.isArray(user.refreshTokens)) user.refreshTokens = [];
-    user.refreshTokens = user.refreshTokens
+    const activeTokens = user.refreshTokens
       .filter(rt => !rt.revoked && (!rt.expiresAt || rt.expiresAt > new Date()))
       .slice(-4);
-    user.refreshTokens.push({
-      token: newHashed,
-      createdAt: new Date(),
-      expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
-      revoked: false,
+
+    await prisma.refreshToken.deleteMany({
+      where: {
+        userId: user.id,
+        OR: [{ revoked: true }, { expiresAt: { lte: new Date() } }]
+      }
     });
-    await user.save();
 
-      setAppCookie(res, "driverRefreshToken", newRefreshToken, {
-        maxAge: 7 * 24 * 60 * 60 * 1000,
-        path:"/api/driver",
-      });
-      setAppCookie(res, "driverAccessToken", newAccessToken, {
-        maxAge: 15 * 60 * 1000,
-        path:"/api/driver",
-      });
+    await prisma.refreshToken.create({
+      data: {
+        token: newHashed,
+        expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+        revoked: false,
+        userId: user.id
+      }
+    });
 
-    return res.json({ success: true, roles: user.roles, message: "Token refreshed" });
+    setAppCookie(res, "driverRefreshToken", newRefreshToken, {
+      maxAge: 7 * 24 * 60 * 60 * 1000,
+      path: "/api/driver"
+    });
+    setAppCookie(res, "driverAccessToken", newAccessToken, {
+      maxAge: 15 * 60 * 1000,
+      path: "/api/driver"
+    });
+
+    return res.json({ success: true, roles: user.roleAssignments.map(r => r.role), message: "Token refreshed" });
+
   } catch (err) {
-       if (err.name === 'TokenExpiredError' || err.name === 'JsonWebTokenError') {
-      return res.status(403).json({ code: 'JWT_INVALID', message: "Invalid refresh token." });
+    if (err.name === "TokenExpiredError" || err.name === "JsonWebTokenError") {
+      return res.status(403).json({ code: "JWT_INVALID", message: "Invalid refresh token." });
     }
     logger.error("Refresh token internal error", err);
-    return res.status(500).json({ code: 'REFRESH_INTERNAL', message: "Server error during refresh." });
+    return res.status(500).json({ code: "REFRESH_INTERNAL", message: "Server error during refresh." });
   }
 };
-
-
 const driverLogout = async (req, res) => {
   const refreshToken = req.cookies?.driverRefreshToken;
 
   if (refreshToken) {
     try {
       const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
-      const user = await UserModel.findById(decoded.id);
 
-      if (user && Array.isArray(user.refreshTokens) && user.refreshTokens.length) {
-        let updated = false;
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.id },
+        include: { refreshTokens: true }
+      });
 
+      if (user && user.refreshTokens.length) {
         for (const rt of user.refreshTokens) {
           if (rt.revoked) continue;
           if (await bcrypt.compare(refreshToken, rt.token)) {
-            rt.revoked = true;
-            updated = true;
+            await prisma.refreshToken.update({
+              where: { id: rt.id },
+              data: { revoked: true }
+            });
           }
-        }
-
-        if (updated) {
-          await user.save();
         }
       }
     } catch (err) {
@@ -1440,7 +2259,6 @@ const driverLogout = async (req, res) => {
     }
   }
 
-  // Clear all auth-related cookies
   clearMultipleCookies(res, ["driverAccessToken", "driverRefreshToken"]);
   return res.status(200).json({ success: true, message: "Logged out." });
 };
@@ -1453,13 +2271,17 @@ export {
   updateRideStatusDriver, 
   updateDriverProfile, 
   registerDriver, 
+  formSubmitted,
   loginDriver,
   forgotPassword,
   resetPassword,
   addRide,
+  getCommissionRate,
   getCurrentRide,
   getCurrentRides, 
   getDriverBookings,
+  driverRespondToRide,
+  arriveAtPickup,
   startRide, 
   completeRide, 
   cancelRide,  
@@ -1471,7 +2293,6 @@ export {
   getDriverEarningsReport,  
   submitSupportRequest,
   updateRideFare,
-  driverRespondToRide,
   getPendingRideRequests,
   driverTokenRefresh,
   getDriverProfile,

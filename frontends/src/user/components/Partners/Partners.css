@@ -65,13 +65,13 @@
 .container4 p{
     font-size: 24px;
     padding: 20px;
-    padding-left: 40px;
+    padding-left: 40px; 
     font-family: "poppins", arial;
     margin-left: -60px;
     margin-right: 50px;
     background-color: rgb(250, 250, 233);
     border-radius: 40px;
-    height: 380px;
+    height: 480px;
 }
 .partners .stroke-container{
     display: none;

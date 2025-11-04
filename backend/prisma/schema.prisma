@@ -1,0 +1,423 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+// ========================
+// USER MODEL
+// ========================
+model User {
+  id                  Int       @id @default(autoincrement())
+  name                String
+  email               String    @unique
+  password            String?
+  avatar              String?
+  googleId            String?   @unique
+  verified            Boolean   @default(false)
+  resetToken          String?
+  resetTokenExpires   DateTime?
+  fcmToken            String?   @unique
+  failedLoginAttempts Int       @default(0)
+  lockUntil           DateTime?
+  lastLoginAt         DateTime? // when user last logged in
+  lastActiveAt        DateTime? // when user last interacted
+  isOnline            Boolean   @default(false)
+
+  // --- Relations ---
+  refreshTokens   RefreshToken[]
+  rides           Ride[]               @relation("UserRides")
+  ratingsGiven    Rating[]             @relation("RaterRelation")
+  ratingsReceived Rating[]             @relation("RateeRelation")
+  bookings        Booking[]
+  roleAssignments UserRoleAssignment[] @relation("UserRoleAssignments")
+  otps            OTP[]
+  notifications   Notification[]
+  driverProfile   DriverProfile?
+  devices         Device[]
+  adminProfile    AdminProfile?
+  createdInvites  AdminInvite[]
+  activityLogs    ActivityLog[]
+  cartItems       CartItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ========================
+// USER ROLE ASSIGNMENT
+// ========================
+model UserRoleAssignment {
+  id     Int      @id @default(autoincrement())
+  userId Int
+  role   UserRole
+  user   User     @relation("UserRoleAssignments", fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([userId, role])
+}
+
+// ======================== 
+// ENUMS
+// ========================
+enum UserRole {
+  USER
+  DRIVER
+  ADMIN
+  SUPER_ADMIN
+  ADMIN_MANAGER
+}
+
+// ========================
+// REFRESH TOKEN
+// ========================
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  token     String
+  revoked   Boolean  @default(false)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+// ========================
+// RIDE MODEL
+// ========================
+model Ride {
+  id               Int            @id @default(autoincrement())
+  pickup           String
+  destination      String
+  pickupNorm       String
+  destinationNorm  String
+  price            Float
+  currency         Currency       @default(USD)
+  commissionRate   Float
+  commissionAmount Float
+  payoutAmount     Float
+  description      String
+  selectedDate     DateTime
+  selectedTime     String
+  capacity         Int
+  maxPassengers    Int
+  imageUrl         String?
+  type             String
+  status           RideStatus     @default(SCHEDULED)
+  distance         Float?
+  duration         String?
+  driverId         Int?
+  driver           User?          @relation("UserRides", fields: [driverId], references: [id])
+  fareHistory      FareHistory[]
+  ratings          Rating[]
+  notifications    Notification[] // ✅ added
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum RideStatus {
+  PENDING_APPROVAL
+  APPROVED
+  PARTIALLY_APPROVED
+  DECLINED
+  SCHEDULED
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  DRIVER_EN_ROUTE
+  ARRIVED
+  CANCELLED
+}
+
+enum Currency {
+  USD
+  EUR
+  GBP
+  NGN
+  KES
+  CFA
+  GHC
+}
+
+// ========================
+// FARE HISTORY
+// ========================
+model FareHistory {
+  id                     Int      @id @default(autoincrement())
+  rideId                 Int
+  previousFare           Float?
+  updatedFare            Float?
+  calculatedExpectedFare Float?
+  updatedAt              DateTime @default(now())
+  ride                   Ride     @relation(fields: [rideId], references: [id])
+}
+
+// ========================
+// RATING MODEL
+// ========================
+model Rating {
+  id        Int      @id @default(autoincrement())
+  rideId    Int
+  raterId   Int
+  rateeId   Int
+  score     Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  ride  Ride @relation(fields: [rideId], references: [id])
+  rater User @relation("RaterRelation", fields: [raterId], references: [id])
+  ratee User @relation("RateeRelation", fields: [rateeId], references: [id])
+}
+
+// ========================
+// BOOKING MODEL
+// ========================
+model Booking {
+  id          Int           @id @default(autoincrement())
+  userId      Int
+  rides       Json
+  amount      Float
+  currency    Currency      @default(USD)
+  address     Json
+  status      BookingStatus @default(PENDING_APPROVAL)
+  payment     Boolean       @default(false)
+  email       String
+  bookingDate DateTime      @default(now())
+
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  notifications Notification[] // ✅ added
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum BookingStatus {
+  PENDING_APPROVAL
+  APPROVED
+  PARTIALLY_APPROVED
+  DECLINED
+  IN_PROGRESS
+  COMPLETED
+  DRIVER_EN_ROUTE
+  CANCELLED
+}
+
+// ========================
+// OTP MODEL (replacement for Mongoose OTPModel)
+// ========================
+model OTP {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  otp       String
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model CartItem {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  itemId    String // or Int if you have numeric product IDs
+  quantity  Int      @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, itemId]) // one item per user
+}
+
+model Notification {
+  id        Int     @id @default(autoincrement())
+  jobId     String? @unique
+  userId    Int?
+  rideId    Int?
+  bookingId Int?
+
+  title   String
+  body    String
+  message String? @default("Welcome back to GoOn. Start booking your rides now!")
+  data    Json?
+  extra   Json?
+
+  type        NotificationType   @default(SYSTEM)
+  scheduledAt DateTime           @default(now())
+  sentAt      DateTime?
+  status      NotificationStatus @default(PENDING)
+  attempts    Int                @default(0)
+  lastError   String?
+  isRead      Boolean            @default(false)
+
+  user    User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ride    Ride?    @relation(fields: [rideId], references: [id])
+  booking Booking? @relation(fields: [bookingId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ========================
+// ENUMS
+// ========================
+enum NotificationType {
+  RIDE_RESPONSE
+  GLOBAL_UPDATE
+  LOGIN
+  REGISTER
+  PROMO
+  SYSTEM
+  RIDE_REQUEST
+  PUSH_TO_DRIVERS
+  PUSH_TO_USERS
+  PUSH_TO_CUSTOMERS
+  PUSH_PROMO
+  PUSH_NEW_DRIVER
+  PUSH_NEW_USER
+  PUSH_TO_ADMINS
+}
+
+enum NotificationStatus {
+  PENDING
+  SENT
+  FAILED
+  DELAYED
+  SKIPPED
+}
+
+model Device {
+  id          Int      @id @default(autoincrement())
+  userId      Int
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fcmToken    String   @unique
+  platform    Platform
+  appVersion  String?
+  lastUpdated DateTime @default(now())
+
+  @@index([lastUpdated])
+}
+
+enum Platform {
+  web
+  ios
+  android
+}
+
+model CommissionConfig {
+  id            Int      @id @default(autoincrement())
+  rate          Float    @default(0.20)
+  effectiveFrom DateTime @default(now())
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// ========================
+// DRIVER PROFILE MODEL
+// ========================
+model DriverProfile {
+  id                 Int          @id @default(autoincrement())
+  userId             Int          @unique
+  phone              String
+  licenseNumber      String
+  vehicleType        VehicleType
+  model              String
+  registrationNumber String
+  capacity           Int          @default(4)
+  rating             Float        @default(0)
+  totalRides         Int          @default(0)
+  status             DriverStatus @default(pending)
+  approved           Boolean      @default(false)
+  maxPassengers      Int          @default(4)
+  isAvailable        Boolean      @default(true)
+  documents          Json?
+  locationLat        Float? // latitude
+  locationLng        Float? // longitude
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([locationLat, locationLng])
+}
+
+enum VehicleType {
+  Car
+  Van
+  Bus
+  Motorbike
+  Truck
+}
+
+enum DriverStatus {
+  pending
+  active
+  inactive
+}
+
+// ============================
+// ADMIN PROFILE
+// ============================
+model AdminProfile {
+  id                     Int          @id @default(autoincrement())
+  userId                 Int          @unique
+  user                   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  twoFASecret            String?
+  is2FAVerified          Boolean      @default(false)
+  isDisabled             Boolean      @default(false)
+  backupCodes            BackupCode[]
+  backupCodesGeneratedAt DateTime?
+  failedLoginAttempts    Int          @default(0)
+  lockUntil              DateTime?
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+}
+
+// ============================
+// BACKUP CODE (subdocument equivalent)
+// ============================
+model BackupCode {
+  id             Int          @id @default(autoincrement())
+  code           String
+  used           Boolean      @default(false)
+  adminProfileId Int
+  adminProfile   AdminProfile @relation(fields: [adminProfileId], references: [id])
+}
+
+// ============================
+// ADMIN INVITE
+// ============================
+model AdminInvite {
+  id          Int      @id @default(autoincrement())
+  email       String
+  roles       String
+  token       String   @unique
+  expiresAt   DateTime
+  accepted    Boolean  @default(false)
+  createdById Int
+  createdBy   User     @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================
+// ACTIVITY LOG
+// ============================
+model ActivityLog {
+  id           Int      @id @default(autoincrement())
+  userId       Int? // user, admin, or driver
+  user         User?    @relation(fields: [userId], references: [id])
+  role         String?
+  action       String
+  description  String
+  ipAddress    String?
+  userAgent    String?
+  rawUserAgent String?
+  createdAt    DateTime @default(now())
+}

@@ -33,13 +33,13 @@ const Setup2FA = () => {
   // Download backup codes as .txt file
   const downloadBackupCodes = () => {
     const content =
-      "TOLI-TOLI Backup Codes\n\n" +
+      "GoOn Backup Codes\n\n" +
       backupCodes.join("\n") +
       "\n\nEach code can be used once. Keep this file safe!";
     const element = document.createElement("a");
     const file = new Blob([content], { type: "text/plain" });
     element.href = URL.createObjectURL(file);
-    element.download = "toli-toli-backup-codes.txt";
+    element.download = "GoOn-backup-codes.txt";
     document.body.appendChild(element);
     element.click();
     document.body.removeChild(element);
@@ -271,7 +271,7 @@ const Setup2FA = () => {
               <Button
                 color="secondary"
                 variant="outlined"
-                onClick={() => (window.location.href = "/admin/verify-backup-code")}
+                onClick={() => (window.location.href = `${AUTH_LK}/verify-backup-code`)}
                 sx={{
                   fontWeight: 600,
                   letterSpacing: 0.5,

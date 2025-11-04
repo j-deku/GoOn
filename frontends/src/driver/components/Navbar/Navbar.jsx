@@ -76,7 +76,7 @@ const Navbar = () => {
     <nav className="navbar">
       <div className="navbar__left">
         <Link to="/driver/dashboard">
-          <img className="navbar__logo" src="/TT-logo.png" alt="Logo" />
+          <img className="navbar__logo" src="/GN-logo.png" alt="Logo" />
         </Link>
       </div>
 

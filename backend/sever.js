@@ -1,10 +1,11 @@
 // sever.js
 import express from "express";
 import path from "path";
-import { fileURLToPath } from "url";
-import http from "http";
+import { fileURLToPath } from "url"; 
+import { exec } from 'child_process';
+import http from "http"; 
 import { Server as IOServer } from "socket.io";
-                                                                       
+import fs from "fs";                             
 import helmet from "helmet";
 import compression from "compression";
 import corsMiddleware from "./middlewares/cors.js";
@@ -29,7 +30,8 @@ import cookieParser from "cookie-parser";
 import session from "express-session";
 import passport from "./config/passport.js";
 
-import { connectDB } from "./config/Db.js";
+import prisma, { connectDB } from "./config/Db.js";
+import "./cron/cleanUpLogs.js";
 import './workers/notificationWorker.js';
 import "./patchBullBoard.js";
 import { ensureSuperAdminExists } from "./controllers/AdminController.js";
@@ -51,17 +53,17 @@ const __dirname  = path.dirname(__filename);
 // ── App & Server Setup ─────────────────────────────────────────────────────────
 const app = express();
 app.disable("x-powered-by");
-app.set("trust proxy", true);
+app.set("trust proxy", 1);
 const port = process.env.PORT || 5000;
 
 // Create HTTP server & attach Socket.IO
 const server = http.createServer(app);
-export const io = new IOServer(server, {
+export const io = new IOServer(server, { 
   path: '/socket.io',
   cors: {
     origin: function (origin, callback) {
       if (!origin) return callback(null, true);
-      if (
+     /* if (
         [
           process.env.FRONTEND_URL,
           process.env.BACKEND_URL,
@@ -72,9 +74,9 @@ export const io = new IOServer(server, {
         callback(null, true);
       } else {
         callback(new Error("Not allowed by Socket.IO CORS"), false);
-      }
+      } */
     },
-    methods: ['GET', 'POST', 'DELETE', 'PUT', 'PATCH', 'OPTIONS'],
+    methods: ['GET', 'POST', 'DELETE', 'PUT', 'PATCH', 'OPTIONS', 'UPDATE'],
     credentials: true,
   },
   transports: ['websocket','polling'],
@@ -83,6 +85,7 @@ export const io = new IOServer(server, {
   allowEIO3: true,
 });
 
+app.set("io", io);
 // ── 1) Serve Vite Build Output ─────────────────────────────────────────────────
 app.use(
   express.static(path.join(__dirname, "dist"), {
@@ -133,7 +136,7 @@ app.use(
         fontSrc: ["'self'", "data:", "https://fonts.gstatic.com"],
         imgSrc: ["'self'", "data:", "https:"],
         connectSrc: ["'self'", process.env.BACKEND_URL, 
-          /\.ngrok-free\.app$/
+         // /\.ngrok-free\.app$/
            ],
         frameAncestors: ["'none'"],
         objectSrc: ["'none'"],
@@ -152,6 +155,14 @@ app.use(
     crossOriginResourcePolicy: { policy: "cross-origin" },
   })
 );
+
+// Automatically run migrations and seed on startup (for dev only)
+if (process.env.NODE_ENV !== 'production') {
+  exec('npx prisma migrate deploy && npx prisma db seed', (err, stdout, stderr) => {
+    if (err) console.error('Migration/Seed error:', stderr);
+    else console.log(stdout);
+  });
+}
 
 // ── 3) API Route Mounts ─────────────────────────────────────────────────────────
 app.use("/api/user", userRouter);
@@ -252,10 +263,32 @@ io.on("connection", (socket) => {
     console.log(`Socket ${socket.id} is now in user room: ${userId}`);
   });
 
+  io.on("connection", (socket) => {
+  console.log("🟢 Admin connected:", socket.id);
+  socket.on("disconnect", () => console.log("🔴 Admin disconnected:", socket.id));
+})
   socket.on("joinAdminRoom", (adminId) => {
     socket.join(adminId);
     console.log(`✅ Admin ${adminId} joined room successfully.`);
   });
+
+  const userId = socket.handshake.auth.userId;
+  if (userId) {
+    prisma.user.update({
+      where: { id: userId },
+      data: { isOnline: true, lastActiveAt: new Date() },
+    }).then(() => {
+      io.emit("user_status_update", { userId, isOnline: true });
+    });
+
+    socket.on("disconnect", async () => {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { isOnline: false, lastActiveAt: new Date() },
+      });
+      io.emit("user_status_update", { userId, isOnline: false });
+    });
+  }
 
   socket.on("declineBooking", ({ bookingId, rideId, userId }) => {
     console.log(`Emitting bookingDeclined to user room: ${userId}`);

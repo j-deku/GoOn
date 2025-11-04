@@ -18,6 +18,10 @@ const Footer = () => {
   const AUTH_LINK_TEXT = import.meta.env.VITE_AUTH_LINK_TEXT;
   const AUTH_LK = import.meta.env.VITE_AUTH_LINK1;
 
+  const DR_AUTH = import.meta.env.VITE_DR_AUTH;
+  const DR_LK = import.meta.env.VITE_AUTH_LINK_DR;
+  const DR_AUTH_LINK_TEXT = import.meta.env.VITE_AUTH_LINK_TEXT_DR;
+
   function AuthGuard({ allowedRoles = [], children }) {
     const isAuthenticated = useSelector(selectIsAuthenticated);
     const roles = useSelector(selectUserRoles);
@@ -117,6 +121,11 @@ const Footer = () => {
             <li>
               <AuthGuard allowedRoles={AUTH}>
                 <Link to={`${AUTH_LK}/login`}>{AUTH_LINK_TEXT}</Link>
+              </AuthGuard>
+            </li>
+             <li>
+              <AuthGuard allowedRoles={DR_AUTH}>
+                <Link to={`${DR_LK}/login`}>{DR_AUTH_LINK_TEXT}</Link>
               </AuthGuard>
             </li>
           </ul>

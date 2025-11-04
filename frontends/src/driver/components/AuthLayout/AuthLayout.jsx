@@ -7,7 +7,7 @@ export default function AuthLayout({ children }) {
   return (
     <>
           <Helmet>
-            <title>Driver - TOLI‑TOLI</title>
+            <title>Driver - GoOn</title>
           </Helmet>
       <Navbar />
       <hr />

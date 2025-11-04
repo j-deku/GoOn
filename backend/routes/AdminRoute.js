@@ -45,6 +45,7 @@ import { acceptInvite } from "../controllers/AcceptInvite.js";
 import { captchaRateLimiter } from "../middlewares/captchaRateLimit.js";
 import { adminIPGuard, checkAdminIP } from "../middlewares/AdminIPGuard.js";
 import { AdminLoginLimiter, limiter } from "../middlewares/rateLimiter.js";
+import { getActivityLogs } from "../controllers/GetActivityLog.js";
 
 const adminRouter = express.Router();
 adminRouter.get("/check-ip", limiter, checkAdminIP);
@@ -110,5 +111,8 @@ adminRouter.get("/drivers/:id", getDriverById);
 adminRouter.put("/drivers/:id", upload.single("avatar"), updateDriverDetails);
 
 adminRouter.get("/bookings", getAllBookings);
+
+//logging
+adminRouter.get("/activity-logs", getActivityLogs);
 
 export default adminRouter;

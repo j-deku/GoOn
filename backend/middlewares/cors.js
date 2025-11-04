@@ -7,7 +7,7 @@ const allowed = [
   process.env.FRONTEND_URL, 
   process.env.BACKEND_URL,
   'http://localhost',
-  /\.ngrok-free\.app$/
+ // /\.ngrok-free\.app$/
 ].filter(Boolean);
 
 const corsOptions = {

@@ -8,12 +8,14 @@ import {
   CircularProgress,
   Alert,
 } from "@mui/material";
+import { CheckBox, CheckBoxRounded } from "@mui/icons-material";
 
 export default function AdminCommission() {
   const [ratePct, setRatePct] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
 
   // Load current rate on mount
   useEffect(() => {
@@ -42,6 +44,7 @@ export default function AdminCommission() {
       { rate: numeric }
     ).then(() => {
       alert("Commission rate updated");
+      setMessage("Rate updated");
     }).catch(() => {
       setError("Update failed.");
     }).finally(() => setSaving(false));
@@ -51,10 +54,11 @@ export default function AdminCommission() {
 
   return (
     <Box height={350} sx={{ maxWidth: 400, placeSelf:"center", mx: 'auto', mt: 5, p: 3, boxShadow: 2, borderRadius: 2 }}>
+      
       <Typography variant="h6" gutterBottom>
         Platform Commission Rate
       </Typography>
-      {error && <Alert severity="error">{error}</Alert>}
+      {error && <Alert severity="error">{error}</Alert>}{message && <Alert severity="success">{message}</Alert>}
       <TextField
         label="Commission (%)"
         type="number"
@@ -72,6 +76,13 @@ export default function AdminCommission() {
       >
         {saving ? <CircularProgress size={20} /> : "Update Rate"}
       </Button>
+
+      <Typography variant="body2" color="textSecondary" sx={{ mt: 2 }}>
+        <Typography component="span" fontWeight="bold">
+          Note:
+      </Typography>
+        This rate determines the commission percentage taken from each transaction on the platform.
+      </Typography>
     </Box>
   );
 }

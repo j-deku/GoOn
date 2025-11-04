@@ -1,5 +1,5 @@
 import express from "express";
-import { cancelRide, completeRide, driverRespondToRide, getCurrentRide, getCurrentRides,driverTokenRefresh, getDriverEarnings, getDriverEarningsReport, getDriverHistory, getPendingRideRequests, getPerformanceMetrics, getUpcomingRides, loginDriver, registerDriver, addRide, startRide, submitSupportRequest, updateDriverProfile, updateRideFare, updateRideStatusDriver, getDriverRides, forgotPassword, resetPassword, updateRide, getRideById, deleteRide, driverLogout, getDriverProfile, arriveAtPickup, getDriverBookings } from "../controllers/DriverController.js";
+import { cancelRide, completeRide, driverRespondToRide, getCurrentRide, getCurrentRides,driverTokenRefresh, getDriverEarnings, getDriverEarningsReport, getDriverHistory, getPendingRideRequests, getPerformanceMetrics, getUpcomingRides, loginDriver, registerDriver, addRide, startRide, submitSupportRequest, updateDriverProfile, updateRideFare, updateRideStatusDriver, getDriverRides, forgotPassword, resetPassword, updateRide, getRideById, deleteRide, driverLogout, getDriverProfile, arriveAtPickup, getDriverBookings, formSubmitted, getCommissionRate } from "../controllers/DriverController.js";
 import driverAuth from "../middlewares/driverAuth.js";
 import upload from '../config/Multer.js'
 import { rateRide } from "../controllers/RideController.js";
@@ -7,10 +7,13 @@ import { rateRide } from "../controllers/RideController.js";
 const driverRouter = express.Router();
 
 driverRouter.post('/register', upload.single("avatar"), registerDriver);
+driverRouter.get('/form-submitted', formSubmitted);
 driverRouter.post('/login', loginDriver);
 driverRouter.post("/forgot-password", forgotPassword);
 driverRouter.post("/reset-password/:token", resetPassword);
 driverRouter.post("/refresh-token", driverTokenRefresh);
+driverRouter.get("/commission-rate", getCommissionRate);
+
 
 driverRouter.use(driverAuth); 
 

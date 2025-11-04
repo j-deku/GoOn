@@ -1,5 +1,4 @@
 /* eslint-disable no-unused-vars */
-// ✅ Enhanced: TOLI Assistant with typing animation & FAQ memory
 import { useState, useEffect, useRef } from "react";
 import { Comment } from "@mui/icons-material";
 import { FaPaperPlane, FaMicrophone, FaQuestion } from "react-icons/fa";

@@ -91,12 +91,12 @@ const EditRide = () => {
           setExistingImageUrl(r.imageUrl || "");
         } else {
           toast.error(resp.data.message || "Ride not found");
-          navigate("/dashboard");
+          navigate("/driver/dashboard");
         }
       } catch (err) {
         console.error("Error fetching ride:", err);
         toast.error("Failed to load ride details");
-        navigate("/dashboard");
+        navigate("/driver/dashboard");
       } finally {
         setLoading(false);
       }
@@ -183,7 +183,7 @@ const EditRide = () => {
       );
       if (resp.data.success) {
         toast.success("Ride updated successfully");
-        navigate("/dashboard");
+        navigate("/driver/dashboard");
       } else {
         toast.error(resp.data.message);
       }

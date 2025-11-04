@@ -10,8 +10,8 @@
     align-items: center;
 }
 .verify-otp{
-    margin: 50px 0;
-    position: relative;
+    margin-top: 30em;
+    position: fixed;
     place-self: center;
     align-items: center;
     font-size: 18px;

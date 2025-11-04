@@ -25,7 +25,7 @@ const MyRides = () => {
       });
       setRides(
         data.rides.map(r => ({
-          id: r._id,
+          id: r.id,
           pickup: r.pickup,
           destination: r.destination,
           time: r.selectedTime,
@@ -118,7 +118,9 @@ const MyRides = () => {
         pagination
         disableSelectionOnClick
         rowHeight={64}
+        getRowId={(row) => row.id || row.id || `${row.pickup}-${row.destination}-${row.time}`}
       />
+
 
       <Dialog open={openDialog} onClose={() => setOpenDialog(false)}>
         <DialogTitle>Confirm Deletion</DialogTitle>

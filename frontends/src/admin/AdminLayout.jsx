@@ -21,6 +21,7 @@ import TestPush from "./Pages/TestPush/TestPush";
 import AdminPushForm from "./components/Global/News/AdminPushForm/AdminPushForm";
 import NotificationsHistory from "./components/Global/News/NotificationHistory/NotificationHistory";
 import BullBoard from "./components/Global/News/BullBoard/BullBoard";
+import ActivityLog from "./Pages/ActivityLog/ActivityLog";
 
 export default function AdminLayout() {
 
@@ -31,9 +32,21 @@ export default function AdminLayout() {
           path="dashboard"
           element={
             <AdminSocketProvider>
-              <PrivateRoute allowedRoles={["admin", "super-admin", "admin-manager"]}>
+              <PrivateRoute allowedRoles={["ADMIN", "SUPER_ADMIN", "ADMIN_MANAGER"]}>
                 <AuthLayout>
                   <Dashboard />
+                </AuthLayout>
+              </PrivateRoute>
+            </AdminSocketProvider>
+          }
+        />
+         <Route
+          path="activity-logs"
+          element={
+            <AdminSocketProvider>
+              <PrivateRoute allowedRoles={["ADMIN", "SUPER_ADMIN", "ADMIN_MANAGER"]}>
+                <AuthLayout>
+                  <ActivityLog />
                 </AuthLayout>
               </PrivateRoute>
             </AdminSocketProvider>
@@ -43,7 +56,7 @@ export default function AdminLayout() {
           path="add"
           element={
             <AdminSocketProvider>
-              <PrivateRoute allowedRoles={["super-admin", "admin-manager"]}>
+              <PrivateRoute allowedRoles={["ADMIN", "SUPER_ADMIN", "ADMIN_MANAGER"]}>
                 <AuthLayout>
                   <Add />
                 </AuthLayout>
@@ -55,7 +68,7 @@ export default function AdminLayout() {
           path="list"
           element={
             <AdminSocketProvider>
-              <PrivateRoute allowedRoles={["admin", "super-admin", "admin-manager"]}>
+              <PrivateRoute allowedRoles={["ADMIN", "SUPER_ADMIN", "ADMIN_MANAGER"]}>
                 <AuthLayout>
                   <Lists />
                 </AuthLayout>
@@ -67,7 +80,7 @@ export default function AdminLayout() {
           path="book"
           element={
             <AdminSocketProvider>
-              <PrivateRoute allowedRoles={["admin", "super-admin", "admin-manager"]}>
+              <PrivateRoute allowedRoles={["ADMIN", "SUPER_ADMIN", "ADMIN_MANAGER"]}>
                 <AuthLayout>
                   <Bookings />
                 </AuthLayout>
@@ -79,7 +92,7 @@ export default function AdminLayout() {
           path="add-driver"
           element={
             <AdminSocketProvider>
-              <PrivateRoute allowedRoles={["super-admin", "admin-manager"]}>
+              <PrivateRoute allowedRoles={["ADMIN", "SUPER_ADMIN", "ADMIN_MANAGER"]}>
                 <AuthLayout>
                   <AddDriver />
                 </AuthLayout>
@@ -91,7 +104,7 @@ export default function AdminLayout() {
           path="list-drivers"
           element={
             <AdminSocketProvider>
-              <PrivateRoute allowedRoles={["admin", "super-admin", "admin-manager"]}>
+              <PrivateRoute allowedRoles={["ADMIN", "SUPER_ADMIN", "ADMIN_MANAGER"]}>
                 <AuthLayout>
                   <ListDrivers />
                 </AuthLayout>
@@ -103,7 +116,7 @@ export default function AdminLayout() {
           path="assign-rides"
           element={
             <AdminSocketProvider>
-              <PrivateRoute allowedRoles={["super-admin", "admin-manager"]}>
+              <PrivateRoute allowedRoles={["ADMIN", "SUPER_ADMIN", "ADMIN_MANAGER"]}>
                 <AuthLayout>
                   <AssignRides />
                 </AuthLayout>
@@ -115,7 +128,7 @@ export default function AdminLayout() {
           path="update-ride/:id"
           element={
             <AdminSocketProvider>
-              <PrivateRoute allowedRoles={["super-admin", "admin-manager"]}>
+              <PrivateRoute allowedRoles={["ADMIN", "SUPER_ADMIN", "ADMIN_MANAGER"]}>
                 <AuthLayout>
                   <UpdateRides />
                 </AuthLayout>
@@ -127,7 +140,7 @@ export default function AdminLayout() {
           path="update-driver/:id"
           element={
             <AdminSocketProvider>
-              <PrivateRoute allowedRoles={[ "super-admin", "admin-manager"]}>
+              <PrivateRoute allowedRoles={[ "ADMIN", "SUPER_ADMIN", "ADMIN_MANAGER"]}>
                 <AuthLayout>
                   <UpdateDrivers />
                 </AuthLayout>
@@ -141,7 +154,7 @@ export default function AdminLayout() {
           path="finance"
           element={
             <AdminSocketProvider> 
-              <PrivateRoute allowedRoles={["super-admin", "admin-manager"]}>
+              <PrivateRoute allowedRoles={["ADMIN", "SUPER_ADMIN", "ADMIN_MANAGER"]}>
                 <AuthLayout>
                   <Finance />
                 </AuthLayout>
@@ -151,36 +164,36 @@ export default function AdminLayout() {
         />
         <Route path="settings" element={
           <AdminSocketProvider>
-            <PrivateRoute allowedRoles={["admin-manager", "super-admin"]}>
+            <PrivateRoute allowedRoles={["ADMIN", "SUPER_ADMIN", "ADMIN_MANAGER"]}>
               <Settings/>
             </PrivateRoute>
           </AdminSocketProvider>
           }
           />
-          <Route path="push-test" allowedRoles={["super-admin"]} element={
+          <Route path="push-test" allowedRoles={["SUPER_ADMIN"]} element={
             <AdminSocketProvider>
-              <PrivateRoute allowedRoles={["super-admin"]}>
+              <PrivateRoute allowedRoles={["SUPER_ADMIN"]}>
                 <TestPush/>
               </PrivateRoute>            
             </AdminSocketProvider>
           }/>
-          <Route path="push-global" allowedRoles={["super-admin"]} element={
+          <Route path="push-global" allowedRoles={["SUPER_ADMIN"]} element={
             <AdminSocketProvider>
-              <PrivateRoute allowedRoles={["super-admin", "admin-manager"]}>
+              <PrivateRoute allowedRoles={["ADMIN", "SUPER_ADMIN", "ADMIN_MANAGER"]}>
                 <AdminPushForm/>
               </PrivateRoute>            
             </AdminSocketProvider>
           }/>
-            <Route path="push-history" allowedRoles={["super-admin", "admin-manager"]} element={
+            <Route path="push-history" allowedRoles={["ADMIN", "SUPER_ADMIN", "ADMIN_MANAGER"]} element={
             <AdminSocketProvider>
-              <PrivateRoute allowedRoles={["super-admin"]}>
+              <PrivateRoute allowedRoles={["SUPER_ADMIN"]}>
                 <NotificationsHistory/>
               </PrivateRoute>            
             </AdminSocketProvider>
           }/>
-          <Route path="bull" allowedRoles={["super-admin", "admin-manager"]} element={
+          <Route path="bull" allowedRoles={["ADMIN", "SUPER_ADMIN", "ADMIN_MANAGER"]} element={
             <AdminSocketProvider>
-              <PrivateRoute allowedRoles={["super-admin", "admin-manager"]}>
+              <PrivateRoute allowedRoles={["ADMIN", "SUPER_ADMIN", "ADMIN_MANAGER"]}>
                 <BullBoard/>
               </PrivateRoute>            
             </AdminSocketProvider>

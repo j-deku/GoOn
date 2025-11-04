@@ -49,7 +49,7 @@ const LoginForm = ({ setLogin }) => {
     password: Yup.string()
       .min(8, "Min 8 characters")
       .matches(
-        /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])/,
+        /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])/,
         "Weak password"
       )
       .required("Required"),
@@ -79,6 +79,11 @@ const LoginForm = ({ setLogin }) => {
         break;
       case 401:
         errorMessage = message || "Invalid email or password.";
+        break;
+      case 403:
+        errorMessage = message || "Your acount is not yet verified.";
+        navigate("/verify-otp");
+        setLogin(false);
         break;
       case 423:
         errorMessage = message || "Account is temporarily locked. Please try again later.";
@@ -124,19 +129,12 @@ const LoginForm = ({ setLogin }) => {
       
       // Close login modal
       setLogin(false);
-      
+      // After successTone.play() and toast.success()
+      await dispatch(fetchUserInfo()).unwrap();
+      setLogin(false);
+      navigate("/");
       // Navigate to home
       navigate("/");
-
-      // Background tasks with better error handling
-      setTimeout(() => {
-        dispatch(fetchUserInfo())
-          .unwrap()
-          .catch((error) => {
-            console.warn("User info fetch failed:", error);
-            // Don't show error toast - user is already logged in
-          });
-      }, 100); // Increased delay
 
       setTimeout(() => {
         syncFcmToken().catch((error) => {
@@ -162,10 +160,15 @@ const LoginForm = ({ setLogin }) => {
     }
   };
 
+  const resetPassPage = () =>{
+    navigate("/forgot-password", "_blank")
+    setLogin(false);
+  }
+
   return (
     <Box sx={{ maxWidth: 400, mx: "auto", p: 2 }}>
       <Typography variant="h5" align="center" color="gray" mb={3}>
-        User Login
+        Login to Your Account
       </Typography>
 
       {/* Error Alert */}
@@ -250,6 +253,14 @@ const LoginForm = ({ setLogin }) => {
               component="div"
               style={{ color: "red", fontSize: "0.875rem" }}
             />
+            <Typography
+              variant="body2"
+              align="right"
+              sx={{ mt: 1, mb: 2, cursor: "pointer", color: "blue" }}
+              onClick={resetPassPage}
+            >
+              Forgot Password?
+            </Typography>
 
             <Box textAlign="center" my={2}>
               <Button

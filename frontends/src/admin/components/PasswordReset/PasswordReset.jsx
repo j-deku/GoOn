@@ -21,6 +21,7 @@ const PasswordReset = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const AUTH_LK1 = import.meta.env.VITE_AUTH_LINK1;
 
   const togglePassword = () => setShowPassword((prev) => !prev);
 
@@ -29,7 +30,7 @@ const PasswordReset = () => {
     password: Yup.string()
       .min(8, "Password must be at least 8 characters long")
       .matches(
-        /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/,
+        /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&#])[A-Za-z\d@$!%*?&#]{8,}$/,
         "Password must contain uppercase, lowercase, number, and special character."
       )
       .required("Password is required"),
@@ -46,7 +47,7 @@ const PasswordReset = () => {
       setMessage(res.data.message);
       resetForm();
       // Redirect to login page after 3 seconds
-      setTimeout(() => navigate("/"), 3000);
+      setTimeout(() => navigate(`${AUTH_LK1}/login`), 3000);
     } catch (error) {
       setMessage(
         "Error: " +

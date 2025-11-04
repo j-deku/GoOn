@@ -1,15 +1,12 @@
-import BookingModel from "../models/BookingModel.js";
-import RatingModel from "../models/RatingModel.js";
-import RideModel from "../models/RideModel.js";
+import prisma from "../config/Db.js";
 
-// Helper to strip accents & lowercase
+// helper
 const stripAccents = (s = "") =>
-  s
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
+  s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
 
+/**
+ * Search available rides
+ */
 export const searchRides = async (req, res) => {
   try {
     const {
@@ -21,182 +18,165 @@ export const searchRides = async (req, res) => {
       filter,
       page = 1,
       limit = 10,
-      pickupLat,
-      pickupLng,
-      destLat,
-      destLng,
     } = req.query;
 
-    const query = {};
+    const where = {};
 
-    // Geospatial fallback if coords provided
-    if (pickupLat && pickupLng) {
-      query.pickupLocation = {
-        $near: {
-          $geometry: {
-            type: "Point",
-            coordinates: [parseFloat(pickupLng), parseFloat(pickupLat)],
-          },
-          $maxDistance: 10000, // 10 km
-        },
-      };
-    } else if (pickup) {
-      // Accent-insensitive match on normalized field
-      query.pickupNorm = {
-        $regex: stripAccents(pickup),
-        $options: "i",
+    // pickup
+    if (pickup) {
+      where.pickupNorm = { contains: stripAccents(pickup)};
+    }
+
+    // destination
+    if (destination) {
+      where.destinationNorm = {
+        contains: stripAccents(destination),
       };
     }
 
-    if (destLat && destLng) {
-      query.destinationLocation = {
-        $near: {
-          $geometry: {
-            type: "Point",
-            coordinates: [parseFloat(destLng), parseFloat(destLat)],
-          },
-          $maxDistance: 10000,
-        },
-      };
-    } else if (destination) {
-      query.destinationNorm = {
-        $regex: stripAccents(destination),
-        $options: "i",
-      };
-    }
-
-    // Date filtering
+    // date filter
     const now = new Date();
     const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
-    const currentTime = now.toTimeString().slice(0, 5); // "HH:mm"
+    const currentTime = now.toTimeString().slice(0, 5);
 
     if (selectedDate) {
-      // filter to exact day
       const d = new Date(selectedDate);
       const start = new Date(d.setHours(0, 0, 0, 0));
       const end = new Date(d.setHours(23, 59, 59, 999));
-      query.selectedDate = { $gte: start, $lte: end };
+      where.selectedDate = { gte: start, lte: end };
 
-      // if user is searching for today, only future times
       const todayString = startOfToday.toISOString().split("T")[0];
       const selString = start.toISOString().split("T")[0];
       if (selString === todayString) {
-        query.selectedTime = { $gte: currentTime };
+        where.selectedTime = { gte: currentTime };
       }
     } else {
-      // no date filter: only future rides (today + future days)
-      query.$or = [
-        { selectedDate: { $gt: endOfToday } },
-        { selectedDate: { $gte: startOfToday, $lte: endOfToday }, selectedTime: { $gte: currentTime } },
+      where.OR = [
+        { selectedDate: { gt: endOfToday } },
+        {
+          AND: [
+            { selectedDate: { gte: startOfToday, lte: endOfToday } },
+            { selectedTime: { gte: currentTime } },
+          ],
+        },
       ];
     }
 
-    // Minimum passengers
-    if (passengers) {
-      query.passengers = { $gte: Number(passengers) };
-    }
+    // passengers
+    if (passengers) where.passengers = { gte: Number(passengers) };
 
-    // Type filter
+    // type filter
     if (filter && filter.toLowerCase() !== "all") {
-      query.type = { $regex: `^${filter}$`, $options: "i" };
+      where.type = { equals: filter };
     }
 
-    // Sorting
-    const sortCriteria = {};
-    if (sort === "earliest") sortCriteria.selectedDate = 1;
-    else if (sort === "lowestPrice") sortCriteria.price = 1;
-    else if (sort === "shortestRide") sortCriteria.distance = 1;
+    // sorting
+    let orderBy = {};
+    if (sort === "earliest") orderBy = { selectedDate: "asc" };
+    else if (sort === "lowestPrice") orderBy = { price: "asc" };
+    else if (sort === "shortestRide") orderBy = { distance: "asc" };
 
-    // 2) Fetch matching rides
-    const [ rides, totalCount ] = await Promise.all([
-      RideModel.find(query)
-        .populate("driver", "name imageUrl")
-        .sort(sortCriteria)
-        .skip((Number(page) - 1) * Number(limit))
-        .limit(Number(limit))
-        .lean(),
-      RideModel.countDocuments(query),
+    // find rides
+    const [rides, totalCount] = await Promise.all([
+      prisma.ride.findMany({
+        where,
+        include: { driver: { select: { name: true, avatar: true } } },
+        orderBy,
+        skip: (Number(page) - 1) * Number(limit),
+        take: Number(limit),
+      }),
+      prisma.ride.count({ where }),
     ]);
+
     const totalPages = Math.ceil(totalCount / Number(limit));
 
-    // 3) Aggregate approved seats per ride
-    const agg = await BookingModel.aggregate([
-      { $unwind: "$rides" },
-      { $match: { "rides.status": "approved" } },
-      { $group: {
-          _id: "$rides._id",
-          seatsTaken: { $sum: "$rides.passengers" }
-      }}
-    ]);
-    const seatsMap = agg.reduce((m, a) => (m[a._id] = a.seatsTaken, m), {});
+    // aggregate bookings per ride
+    const agg = await prisma.booking.groupBy({
+      by: ["rideId"],
+      where: { status: "APPROVED" },
+      _sum: { passengers: true },
+    });
+    const seatsMap = Object.fromEntries(
+      agg.map((a) => [a.rideId, a._sum.passengers || 0])
+    );
 
-      // controllers/search.js
-      const enriched = rides.map(r => {
-        const seatsTaken = seatsMap[r._id] || 0;
-        // now compare seatsTaken >= r.maxPassengers
-        const isFull = seatsTaken >= r.maxPassengers;
-        return { ...r, seatsTaken, isFull };
-      });
+    const enriched = rides.map((r) => {
+      const seatsTaken = seatsMap[r.id] || 0;
+      const isFull = seatsTaken >= r.maxPassengers;
+      return { ...r, seatsTaken, isFull };
+    });
 
-    return res.status(200).json({ success: true, rides:enriched, totalPages });
+    res.status(200).json({ success: true, rides: enriched, totalPages });
   } catch (error) {
     console.error("Error in searchRides:", error);
-    return res.status(500).json({ message: "Server error" });
+    res.status(500).json({ message: "Server error" });
   }
 };
 
+/**
+ * Get ride counts by type
+ */
 export const getRideCounts = async (req, res) => {
   try {
     const { pickup, destination, selectedDate, passengers } = req.query;
-    const match = {};
+    const where = {};
 
-    if (pickup)
-      match.pickupNorm = { $regex: stripAccents(pickup), $options: "i" };
+    if (pickup) where.pickupNorm = { contains: stripAccents(pickup)};
     if (destination)
-      match.destinationNorm = { $regex: stripAccents(destination), $options: "i" };
+      where.destinationNorm = { contains: stripAccents(destination)};
     if (selectedDate) {
       const d = new Date(selectedDate);
-      match.selectedDate = {
-        $gte: new Date(d.setHours(0, 0, 0, 0)),
-        $lte: new Date(d.setHours(23, 59, 59, 999)),
-      };
+      const start = new Date(d.setHours(0, 0, 0, 0));
+      const end = new Date(d.setHours(23, 59, 59, 999));
+      where.selectedDate = { gte: start, lte: end };
     }
-    if (passengers) match.passengers = { $gte: Number(passengers) };
+    if (passengers) where.passengers = { gte: Number(passengers) };
 
-    const counts = await RideModel.aggregate([
-      { $match: match },
-      { $group: { _id: "$type", count: { $sum: 1 } } },
-    ]);
+    const counts = await prisma.ride.groupBy({
+      by: ["type"],
+      where,
+      _count: true,
+    });
 
-    return res.status(200).json({ success: true, counts });
+    res.status(200).json({ success: true, counts });
   } catch (error) {
     console.error("Error in getRideCounts:", error);
-    return res.status(500).json({ success: false, message: "Server error" });
+    res.status(500).json({ success: false, message: "Server error" });
   }
 };
 
-
+/**
+ * Rate a ride
+ */
 export const rateRide = async (req, res) => {
-  const { rideId, score, comment } = req.body;
-  const raterId = req.user._id; // assume JWT auth middleware
+  try {
+    const { rideId, score, comment } = req.body;
+    const raterId = req.user.id; // assuming JWT middleware sets req.user
 
-  // 1) Create rating
-  const ride = await RideModel.findById(rideId);
-  if (!ride) return res.status(404).json({ success: false, message: "Ride not found" });
-  const rateeId = ride.driver;
+    const ride = await prisma.ride.findUnique({ where: { id: Number(rideId) } });
+    if (!ride) return res.status(404).json({ success: false, message: "Ride not found" });
 
-  const rating = await RatingModel.create({
-    ride: rideId,
-    rater: raterId,
-    ratee: rateeId,
-    score,
-    comment,
-  });
+    const rateeId = ride.driverId;
 
-  // 2) Update ride doc with rating (optional)
-  ride.rating = score;
-  await ride.save();
+    const rating = await prisma.rating.create({
+      data: {
+        rideId: Number(rideId),
+        raterId,
+        rateeId,
+        score,
+        comment,
+      },
+    });
 
-  res.json({ success: true, rating });
+    await prisma.ride.update({
+      where: { id: Number(rideId) },
+      data: { rating: score },
+    });
+
+    res.json({ success: true, rating });
+  } catch (error) {
+    console.error("Error in rateRide:", error);
+    res.status(500).json({ success: false, message: "Server error" });
+  }
 };

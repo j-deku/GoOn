@@ -1,4 +1,3 @@
-// ✅ BotController.js (updated with TOLI-TOLI personality and optional language)
 import dotenv from "dotenv";
 dotenv.config();
 import OpenAI from "openai";
@@ -12,8 +11,8 @@ const BotChat = async (req, res) => {
 
   try {
     const systemPrompt = `
-You are TOLI-TOLI's AI assistant, a friendly and professional transport booking support bot. 
-TOLI-TOLI allows users to search rides, book tickets, receive travel receipts, and manage bookings. 
+You are GoOn's AI assistant, a friendly and professional transport booking support bot. 
+GoOn allows users to search rides, book tickets, receive travel receipts, and manage bookings. 
 Always provide clear, concise, and helpful answers. If asked about features or issues, guide them appropriately.
 ${language ? `Respond in ${language}.` : ""}`;
 

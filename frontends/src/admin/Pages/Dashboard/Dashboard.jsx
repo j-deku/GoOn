@@ -1,6 +1,6 @@
 // Dashboard.jsx
 import { useEffect, useState } from "react";
-import { Box, Grid, Card, CardContent, Typography, useTheme } from "@mui/material";
+import { Box, Grid, Card, CardContent, Typography, useTheme, Button } from "@mui/material";
 import { FaBook, FaCar, FaCoins, FaUsers } from 'react-icons/fa';
 import { RiSteering2Fill } from "react-icons/ri";
 import {
@@ -19,9 +19,12 @@ import {
   Bar,
 } from "recharts";
 import axiosInstanceAdmin from "../../../../axiosInstanceAdmin";
+import { useNavigate } from "react-router-dom";
 
 const Dashboard = () => {
   const theme = useTheme();
+  const navigate = useNavigate();
+  const AUTH_LK2 = import.meta.env.VITE_AUTH_LINK2;
 
   // State for overall dashboard statistics
   const [stats, setStats] = useState({
@@ -288,6 +291,10 @@ const Dashboard = () => {
         <Typography variant="body1" color="text.secondary">
           (Recent activity logs and system updates will be displayed here.)
         </Typography>
+        <Button variant="contained" sx={{ mt: 2 }}
+        onClick={navigate.bind(this, `${AUTH_LK2}/activity-logs`)}>
+          View Activity Logs
+        </Button>
       </Box>
     </Box>
   );

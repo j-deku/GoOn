@@ -26,7 +26,7 @@ const ForgotPassword = () => {
 
   return (
     <div className="overlay">
-      <FaArrowCircleLeft style={{width:40, height:40, float:"left", margin:40, cursor:"pointer"}} onClick={()=>navigate('/')}/>
+      <FaArrowCircleLeft style={{width:40, height:40, float:"left", margin:40, marginTop:100, cursor:"pointer"}} onClick={()=>navigate('/')}/>
       <div className="container">
         <h2>Forgot Password</h2>
         <p>Enter your email to receive a password reset link.</p>

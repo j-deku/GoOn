@@ -10,6 +10,7 @@ import "./ListDrivers.css";
 const ListDrivers = () => {
   const [drivers, setDrivers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const AUTH_LK2 = import.meta.env.VITE_AUTH_LINK2;
 
   // Fetch all drivers from the backend
   const fetchDrivers = async () => {
@@ -83,7 +84,7 @@ const ListDrivers = () => {
             {drivers.map((driver, index) => {
               const prof = driver.profile || {};
               return (
-                <tr key={driver._id || index}>
+                <tr key={driver.id || index}>
                   <td>{index + 1}</td>
                   <td>
                     {driver.avatar ? (
@@ -100,12 +101,12 @@ const ListDrivers = () => {
                   <td>{driver.email || "N/A"}</td>
                   <td>{prof.phone || "N/A"}</td>
                   <td>{prof.licenseNumber || "N/A"}</td>
-                  <td>{prof.vehicle?.vehicleType || "N/A"}</td>
-                  <td>{prof.vehicle?.model || "N/A"}</td>
-                  <td>{prof.vehicle?.registrationNumber || "N/A"}</td>
-                  <td>{prof.vehicle?.capacity ?? "N/A"}</td>
+                  <td>{prof.vehicleType || "N/A"}</td>
+                  <td>{prof.model || "N/A"}</td>
+                  <td>{prof.registrationNumber || "N/A"}</td>
+                  <td>{prof.capacity || "N/A"}</td>
                   <td>
-                    <Link to={`/admin/update-driver/${driver._id}`} className="edit-btn">
+                    <Link to={`${AUTH_LK2}/update-driver/${driver.id}`} className="edit-btn">
                       Edit
                     </Link>
                     {(prof.approved || prof.status === "active") ? (
@@ -114,7 +115,7 @@ const ListDrivers = () => {
                       <Button
                         variant="contained"
                         color="success"
-                        onClick={() => handleApprove(driver._id)}
+                        onClick={() => handleApprove(driver.id)}
                         size="small"
                         sx={{ mt: 1 }}
                       >

@@ -27,6 +27,7 @@ import {
   ListItem,
   ListItemText,
   Divider,
+  Skeleton,
 } from "@mui/material";
 import { Visibility, VisibilityOff } from "@mui/icons-material";
 import { NavLink, useNavigate } from "react-router-dom";
@@ -94,15 +95,34 @@ export default function DriverRegistrationForm() {
       Object.entries(values).forEach(([k, v]) => formData.append(k, v));
       formData.append("avatar", avatar);
       try {
-        const res = await axiosInstanceDriver.post(
-          "/api/driver/register",
-          formData,
-          { withCredentials: true }
-        );
+        const res = await axiosInstanceDriver.post("/api/driver/register", formData, {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+          withCredentials: true,
+        });
+
         if (res.data.success) {
           localStorage.setItem("driverId", res.data.driver.id);
-          setOpenSuccess(true);
-        } else {
+
+          // ✅ Double-check the cookie before navigating
+          try {
+            const check = await axiosInstanceDriver.get("/api/driver/form-submitted", {
+              withCredentials: true,
+            });
+            if (check.data.success) {
+              setOpenSuccess(true);
+            } else {
+              setErrorMsg("Cookie not found yet. Try refreshing or re-registering.");
+              setOpenError(true);
+            }
+          } catch (verifyErr) {
+            console.error("Cookie check failed:", verifyErr);
+            setErrorMsg("Unable to verify session. Please try again later.");
+            setOpenError(true);
+          }
+        }
+        else {
           throw new Error(res.data.message);
         }
       } catch (err) {
@@ -151,10 +171,10 @@ export default function DriverRegistrationForm() {
         </Helmet>
     <ThemeProvider theme={theme}>
       <CssBaseline />
-      <Box sx={{ maxWidth: 700, mx: 'auto', mt: 5, p: 4, bgcolor: 'background.paper', boxShadow: 3, borderRadius: 2 }}>
-        <Box textAlign="center" mb={3}>
-          <img src="/TT-logo.png" alt="Logo" width={80} />
-          <Typography variant="h5" mt={2}>Driver Registration</Typography>
+      <Box sx={{ maxWidth: 700, mx: 'auto', mt: 5, p: 4, bg:'background.paper', boxShadow: 3, borderRadius: 2 }}>
+        <Box textAlign="center" mb={3} sx={{background:"linear-gradient(90deg, black, gray)", borderRadius:2}}>
+          <img src="/GN-logo.png" alt="Logo" width={80} />
+          <Typography variant="h5" mt={2} color="white">Driver Registration</Typography>
         </Box>
         <Stepper activeStep={activeStep} alternativeLabel>
           {steps.map(label => (
@@ -289,9 +309,11 @@ export default function DriverRegistrationForm() {
           <Divider />
           <DialogContent>
             <Typography>Registration successful. Please check your email.</Typography>
+            <Skeleton variant="rectangular" width="100%" height={118} sx={{ mt: 2 }} />
+            <Skeleton variant="text" sx={{ fontSize: '1rem', mt: 1 }} />
           </DialogContent>
           <DialogActions>
-            <Button onClick={() => navigate("/driver/form-submitted")}>Go to Login</Button>
+            <Button onClick={() => navigate("/driver/login")}>Go to Login</Button>
           </DialogActions>
         </Dialog>
 

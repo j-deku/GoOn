@@ -8,17 +8,17 @@ const Footer = () => {
   return (
     <footer className="driver-footer">
     <div className="logo" onClick={()=>navigate("/")}>
-        <img src="/TT-logo.png" alt="Logo" />
+        <img src="/GN-logo.png" alt="Logo" />
     </div>
       <nav className="footer-nav">
-        <Link to="/history">Ride History</Link>
-        <Link to="/earnings">Earnings Report</Link>
-        <Link to="/profile-settings">Profile Settings</Link>
-        <Link to="/support">Support</Link>
+        <Link to="/driver/history">Ride History</Link>
+        <Link to="/driver/earnings">Earnings Report</Link>
+        <Link to="/driver/profile-settings">Profile Settings</Link>
+        <Link to="/driver/support">Support</Link>
         <a href="tel:+233246062758">📞 Assistance</a>
       </nav>
       <div className="footer-info">
-        <p>&copy; {new Date().getFullYear()} TOLI-TOLI. All rights reserved.</p>
+        <p>&copy; {new Date().getFullYear()} GoOn. All rights reserved.</p>
       </div>
     </footer>
   );

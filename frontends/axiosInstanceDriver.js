@@ -14,7 +14,7 @@ const AUTH_ENDPOINTS = [
 const shouldBypassRefresh = (url = '') =>
   AUTH_ENDPOINTS.some((p) => url.endsWith(p));
 
-const isAccessTokenProblem = (status, code) =>
+const isAccessTokenProblem = (status, code) => 
   status === 401 && (
     !code ||
     code === 'ACCESS_TOKEN_EXPIRED' ||

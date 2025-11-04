@@ -58,6 +58,19 @@ const adminSlice = createSlice({
   name: 'admin',
   initialState,
   reducers: {
+    setAdminAuth(state, action) {
+      const { userId, roles, adminInfo } = action.payload || {};
+      state.isAuthenticated = true;
+      state.authChecked = true;
+      state.authStatus = AUTH_STATUS.AUTHENTICATED;
+      state.userId = userId || null;
+      state.userRoles = Array.isArray(roles) ? roles : [roles].filter(Boolean);
+      state.adminInfo = adminInfo || null;
+      state.error = null;
+      state.needsReauth = false;
+
+      if (userId) localStorage.setItem("adminId", userId);
+    },
     setRecaptchaPassed(state, action) {
       state.recaptchaPassed = action.payload;
     },
@@ -158,6 +171,7 @@ export const {
   clearAdmin,
   restoreAdminFromStorage,
   clearError,
+  setAdminAuth,
 } = adminSlice.actions;
 
 // Selectors

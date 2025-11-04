@@ -15,7 +15,7 @@ const Home = () => {
   return (
         <>
         <Helmet>
-          <title>Dashboard - TOLI-Driver</title>
+          <title>Dashboard - GoOn-Driver</title>
         </Helmet>
     <div>
       <Header/>
@@ -27,7 +27,7 @@ const Home = () => {
       variant='contained'
       onClick={() => navigate("/driver/my-bookings")}
       size='large'
-      sx={{ margin: '20px auto', display: 'block', width:{xs:100, sm: 250}, p:"auto", fontWeight:700, borderRadius: 5, backgroundColor:"#0A4D68", color:"white", "&:hover": {backgroundColor:"#0A4D68"}}}
+      sx={{ margin: '20px auto', display: 'block', width:{xs:150, sm: 250}, p:{xs:0.9, sm:2}, fontWeight:700, borderRadius: 5, backgroundColor:"#334850ff", color:"white", "&:hover": {backgroundColor:"#0A4D68"}}}
       >
         Approved Rides</Button>
       <hr/>

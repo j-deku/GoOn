@@ -179,12 +179,16 @@ const handleSearch = () => {
             sx={{
               fontWeight: { xs: 900, sm: 800 },
               fontSize: { xs: "20px", sm: "32px" },
-              color: "#2C3E50",
+              color: "#1e2730ff",
               flexGrow: 1,
               cursor: "pointer",
+              fontFamily: "'Poppins', sans-serif",
+              userSelect: "none",
+              letterSpacing: -4.5,
+              fontStyle: "italic",
             }}
           >
-            TOLI-TOLI
+            GoOn
           </Typography>
           <IconButton edge="end" onClick={() => navigate(-1)}>
             <MdExitToApp size={30} style={{ color: "#333" }} />

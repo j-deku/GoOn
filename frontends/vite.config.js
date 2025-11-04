@@ -40,7 +40,7 @@ export default defineConfig(({ mode }) => {
           "gcm_sender_id": "103953800507",
           "screenshots": [
             {
-              "src": "/TT-logo-1024x1024.png",
+              "src": "/GN-logo.png",
               "sizes": "1024x1024",
               "type": "image/png",
               "purpose":"maskable",

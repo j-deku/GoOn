@@ -35,7 +35,7 @@ export default function NotFound() {
         <img src="/error.png" alt='robot crash' className='robot'/>
       <div className="nf-box">
         <Link to="/">
-        <h2 className="logo"><em>TOLI-TOLI</em></h2>
+        <h2 className="logo"><em>GoOn</em></h2>
       </Link>
         <h1 className="nf-code">404</h1>
         <p className="nf-text">

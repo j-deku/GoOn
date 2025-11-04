@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { FaArrowCircleLeft } from "react-icons/fa";
 import axiosInstance from "../../../../axiosInstance";
 
-const PasswordReset = () => {
+const PasswordReset = ({setLogin}) => {
   const { token } = useParams();
   const navigate = useNavigate();
   const [newPassword, setNewPassword] = useState("");
@@ -17,12 +17,13 @@ const PasswordReset = () => {
     try {
       // Use axiosInstance for consistent baseURL and credentials
       const res = await axiosInstance.post(`/api/user/reset-password/${token}`, {
-        newPassword,
+        password:newPassword,
       });
-      setMessage(res.data.message || "Password reset successful.");
+      setMessage(res.data.message || "Password reset successful✅.");
       setTimeout(() => navigate("/"), 3000); // Redirect to login after success
+      setLogin(true);
     } catch (error) {
-      setMessage("Error: " + (error.response?.data?.message || "Something went wrong"));
+      setMessage(error.res.data.message);
     }
     setLoading(false);
   };
@@ -30,8 +31,8 @@ const PasswordReset = () => {
   return (
     <div className="overlay">
       <FaArrowCircleLeft
-        style={{ width: 40, height: 40, float: "left", margin: 40, cursor: "pointer" }}
-        onClick={() => navigate('/')}
+        style={{ width: 40, height: 40, float: "left", margin: 40, marginTop:100, cursor: "pointer" }}
+        onClick={() => navigate(window.history.back())}
       />
       <div className="container">
         <h2>Reset Password</h2>

@@ -32,37 +32,48 @@ const VerifyOTP = () => {
       .length(6, "OTP must be 6 digits"),
   });
 
-  const handleSubmit = async (values) => {
-    setIsSubmitting(true);
-    try {
-      const response = await axiosInstance.post(`/api/user/verify-otp`, {
+const handleSubmit = async (values) => {
+  setIsSubmitting(true);
+  const storedUserId = localStorage.getItem("userId"); // 🔹 Get stored userId
+
+  try {
+    const response = await axiosInstance.post(
+      `/api/user/verify-otp`,
+      {
         otp: values.otp,
-      }, {
-        withCredentials: true,
-      });
-      if (response.data.success) {
-        successTone.play();
-        window.location.href = response.data.redirect;
-        toast.success("OTP verified successfully!");
-        if (window.opener) {
-          window.opener.postMessage({ verified: true }, "*");
-        }
-        window.close();
-      } else {
-        toast.warning(response.data.message);
-      }
-    } catch (error) {
-      toast.error(error.response?.data?.message || "Failed to verify OTP.");
-    } finally {
-      setIsSubmitting(false);
+        userId: storedUserId, // 🔹 Include userId here
+      },
+      { withCredentials: true }
+    );
+
+    if (response.data.success) {
+      successTone.play();
+      toast.success("OTP verified successfully!");
+      localStorage.removeItem("userId"); // optional cleanup
+      window.location.href = response.data.redirect;
+    } else {
+      toast.warning(response.data.message);
     }
-  };
+  } catch (error) {
+    toast.error(error.response?.data?.message || "Failed to verify OTP.");
+  } finally {
+    setIsSubmitting(false);
+  }
+};
 
   const handleResendOTP = async () => {
+  const storedUserId = localStorage.getItem("userId"); 
+
+  if (!storedUserId) {
+    toast.error("User not found in local storage. Please log in again.");
+    return;
+  }
     try {
-      const response = await axiosInstance.post(`/api/user/resend-otp`, {}, {
-        withCredentials: true,
-      });
+      const response = await axiosInstance.post(
+      `/api/user/resend-otp`,
+      { userId: storedUserId }, 
+      { withCredentials: true }
+    );
       if (response.data.success) {
         toast.success("OTP resent successfully");
       } else {
@@ -78,24 +89,6 @@ const VerifyOTP = () => {
       <div className="whitePaper"></div>
 
       <div className="verify-otp">
-        <em>
-          <p
-            className="text"
-            style={{
-              padding: "40px",
-              color: "gray",
-              fontSize: "16px",
-              marginLeft: "50px",
-              fontFamily: " serif",
-              display: "inline",
-            }}
-          >
-            <p>
-              <i>One-Time Password</i> <br /> has been sent to your email.
-              <FaInfo style={{ color: "deepskyblue", display: "inline" }} />
-            </p>
-          </p>
-        </em>
         <hr />
         <br />
         <br />

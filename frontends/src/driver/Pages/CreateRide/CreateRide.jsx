@@ -33,7 +33,7 @@ export default function CreateRide() {
   const [showModal, setShowModal] = useState(false);
   const [createdRide, setCreatedRide] = useState(null);
 
-  const commissionRate = UseCommissionRate();
+const { rate: commissionRate, loading: commissionLoading } = UseCommissionRate();
 
   const handleChange = (field) => (e) => {
     const value = e.target ? (e.target.type === 'file' ? e.target.files[0] : e.target.value) : e;
@@ -179,7 +179,7 @@ export default function CreateRide() {
 
           {/* Commission & Description */}
           <Grid item xs={12} md={6}>
-            {commissionRate === null
+            {commissionLoading
               ? <CircularProgress size={24} />
               : <TextField
                   label="Your Payout"

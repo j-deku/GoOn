@@ -26,9 +26,9 @@ import axiosInstanceAdmin from "../../../../axiosInstanceAdmin";
 import "./AdminLogin.css";
 import { useDispatch, useSelector } from "react-redux";
 import {
-  fetchAdminInfo,
   selectIsAdminAuthenticated,
   selectAdminAuthChecked,
+  setAdminAuth,
 } from "../../../features/admin/adminSlice";
 import CaptchaModal from "../../components/CaptchaModal/CaptchaModal";
 import { Helmet } from "react-helmet-async";
@@ -96,11 +96,25 @@ const AdminLoginInner = () => {
         toast.info("Two-Factor Authentication required. Redirecting…");
         navigate( `${AUTH_LK}/setup-2fa`, { replace: true });
       } else if (response.data.success) {
-        await dispatch(fetchAdminInfo()).unwrap();
-        successTone.play();
-        toast.success(response.data.message || "Login successful.",{theme:"dark", color:"white",progressStyle: { backgroundColor: "#2e54a7ff" }});
-        localStorage.removeItem("temp2FAToken");
-        navigate(`${AUTH_LK2}/dashboard`);
+        if (response.data.success) {
+  // ✅ Update Redux immediately (no need to wait for /me)
+  const admin = response.data.admin || response.data.user || {}; // adjust based on backend
+  dispatch(setAdminAuth({
+    userId: admin.id || admin._id,
+    roles: admin.roles || response.data.roles || [],
+    adminInfo: admin,
+  }));
+
+  successTone.play();
+  toast.success(response.data.message || "Login successful.", {
+    theme: "dark",
+    color: "white",
+    progressStyle: { backgroundColor: "#2e54a7ff" },
+  });
+
+  localStorage.removeItem("temp2FAToken");
+  setTimeout(() => navigate(`${AUTH_LK2}/dashboard`, { replace: true }), 300);
+}
       } else {
         toast.error(response.data.message || "Login failed.");
       }
@@ -156,7 +170,7 @@ const AdminLoginInner = () => {
       columnGap:{xs:0, sm:15},
       transition: "all 0.3s ease",
       alignItems:"center",
-      background:{xs:"url('/icons/TT-logo-1024x1024.png')", sm:"white"},
+      background:{xs:"url('/GN-logo.png')", sm:"white"},
       backgroundSize:"contain",
       backgroundRepeat:"no-repeat",
       backgroundPosition:{xs:"bottom", sm:"right"},
@@ -188,7 +202,7 @@ const AdminLoginInner = () => {
       }}>
       <Card sx={{display:{xs:'none', sm:'block'}}}>
         <CardHeader
-          title="TOLI-TOLI"
+          title="GoOn"
           subheader="ADMINISTRATOR LOGIN"
           sx={{ textAlign: "center", color: "rgb(9,51, 65)"}}
           subheaderTypographyProps={{ variant: "subtitle1", letterSpacing:2 }}
@@ -197,7 +211,7 @@ const AdminLoginInner = () => {
         <Divider sx={{ mb: 2, display:{xs:'none', sm:'block'} }} />
       </Card>
         <Typography variant="h5" sx={{ mb:2,textAlign: "start", fontWeight:"800", color:"rgb(9,51, 65)", display: { xs: 'block', sm: 'none' } }}>
-          TOLI-TOLI
+          GoOn
         </Typography>
            <Divider sx={{mb:5}}/>
         <Typography variant="h5" sx={{ mb: 3, textAlign: "center", color: "gray", display: { xs: 'block', sm: 'none' } }}>
@@ -271,7 +285,7 @@ const AdminLoginInner = () => {
                 </Box>
                 <Typography variant="body2" sx={{ mb: 2, textAlign: "right" }}>
                   <a
-                    href="/admin/forgot-password"
+                    href={`${AUTH_LK}/forgot-password`}
                     style={{
                       color: "#1A73E8",
                       fontWeight: "bold",
@@ -302,13 +316,13 @@ const AdminLoginInner = () => {
 const AdminLogin = () => (
   <>
   <Helmet>
-    <title>Admin Portal - TOLI-TOLI</title>
-    <meta name="description" content="Admin login page for TOLI-TOLI. Access restricted to authorized administrators only." />
-    <meta name="keywords" content="admin login, TOLI-TOLI, administrator access, secure login" />
+    <title>Admin Portal - GoOn</title>
+    <meta name="description" content="Admin login page for GoOn. Access restricted to authorized administrators only." />
+    <meta name="keywords" content="admin login, GoOn, administrator access, secure login" />
     <meta name="robots" content="noindex, nofollow" />
     <link rel="canonical" href={`${import.meta.env.VITE_AUTH_LINK1}/login`} />
-    <meta property="og:title" content="Admin Login - TOLI-TOLI " />
-    <meta property="og:description" content="Admin login page for TOLI-TOLI. Access restricted to authorized administrators only." />
+    <meta property="og:title" content="Admin Login - GoOn " />
+    <meta property="og:description" content="Admin login page for GoOn. Access restricted to authorized administrators only." />
     <meta property="og:image" content="/icons/TT-logo-1024x1024.png" />
     <meta property="og:url" content={`${import.meta.env.VITE_AUTH_LINK1}/login`} />
     <meta name="twitter:card" content="summary_large_image" />

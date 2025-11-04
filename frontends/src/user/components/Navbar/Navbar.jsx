@@ -7,7 +7,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { clearCart, selectCartItems } from "../../../features/cart/cartSlice";
 import { persistStore } from "redux-persist";
 import store from "../../../app/store";
-import { clearUser, logoutUser } from "../../../features/user/userSlice";
+import { clearUser, fetchUserInfo, logoutUser, selectUser } from "../../../features/user/userSlice";
 import './Navbar.css';
 
 // MUI Components
@@ -68,7 +68,7 @@ const Navbar = ({ setLogin }) => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
-  const user = useSelector((state) => state.user.user);
+  const user = useSelector(selectUser);
   const cartItems = useSelector(selectCartItems);
   const cartCount = Array.isArray(cartItems) ? cartItems.length : 0;
 
@@ -76,6 +76,13 @@ const Navbar = ({ setLogin }) => {
   const [anchorElUser, setAnchorElUser] = useState(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState();
+
+const isAuthenticated = useSelector((state) => state.user.isAuthenticated);
+useEffect(() => {
+  if (isAuthenticated && !user) {
+    dispatch(fetchUserInfo());
+  }
+}, [isAuthenticated, user, dispatch]);
 
   useEffect(() => {
  const handleScroll = () => setIsScrolled(window.scrollY > 20);
@@ -136,7 +143,7 @@ return () => window.removeEventListener("scroll", handleScroll);
       <IconButton onClick={handleDrawerToggle} sx={{ p: 2, float: 'right' }}>
         <CloseIcon />
       </IconButton>
-      <Typography variant="h6" sx={{ my: 2, fontStyle: "italic" }} className="logo">
+      <Typography variant="h6" sx={{ my: 2, fontStyle: "italic", letterSpacing:-3}} className="logo">
         GoOn
       </Typography>
       <Divider />
@@ -232,7 +239,7 @@ return () => window.removeEventListener("scroll", handleScroll);
         <Toolbar sx={{ justifyContent: "space-between", py: 1 }}>
           <Box sx={{ display: "flex", alignItems: "center" }}>
             <Link to="/" style={{ textDecoration: "none", color: "inherit" }}>
-              <Typography variant="h5" component="div" sx={{ fontWeight: "bold", fontStyle: "italic", mr: 2 }}>
+              <Typography variant="h5" component="div" sx={{ fontWeight: "bold", fontStyle: "italic", mr: 2, letterSpacing: -3 }}>
                 GoOn
               </Typography>
             </Link>

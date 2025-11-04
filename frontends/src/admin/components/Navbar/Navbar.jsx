@@ -57,9 +57,9 @@ export default function Navbar({ onMenuClick, isMenuOpen }) {
   return (
     <AppBar
       position="fixed"
-      sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, bgcolor: 'rgb(9, 51, 65)' }}
+      sx={{ zIndex: (theme) => theme.zIndex.drawer + 1, background: 'linear-gradient(90deg, black, #504e4eff)' }}
     >
-      <Toolbar>
+      <Toolbar> 
         {/* Animated Hamburger Icon */}
         <IconButton
           color="inherit"
@@ -139,7 +139,7 @@ export default function Navbar({ onMenuClick, isMenuOpen }) {
         {/* Logo */}
         <Box sx={{ display: 'flex', alignItems: 'center', mr: 2 }}>
           <Link to={`${AUTH_LK2}/dashboard`}>
-            <img src="/TT-logo.png" alt="Logo" height={50} />
+            <img src="/GN-logo.png" alt="Logo" height={50} />
           </Link>
         </Box>
 

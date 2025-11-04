@@ -30,11 +30,13 @@ import ForgotPasswordDriver from "./driver/components/ForgotPasswordDriver/Forgo
 import PasswordResetDriver from "./driver/components/PasswordResetDriver/PasswordResetDriver";
 import FormSubmitted from "./driver/pages/FormSubmitted/FormSubmitted";
 import {
+  recoverSession,
+  restoreUserState,
   selectAuthStatus,
   selectIsAuthenticated,
   selectUserRoles,
 } from "./features/user/userSlice";
-import { useSelector } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import NotFound from "./admin/Pages/NotFound/NotFound";
 import LoadingPage from "./user/components/LoadingPage/LoadingPage";
 import AccessCheck from "./guards/AccessCheck/AccessCheck";
@@ -43,6 +45,7 @@ export default function App() {
   const AUTH = import.meta.env.VITE_AD_AUTH;
   const AUTH_LK = import.meta.env.VITE_AUTH_LINK1;
   const AUTH_LK2 = import.meta.env.VITE_AUTH_LINK2;
+  const dispatch = useDispatch();
   // Service Worker Sound Notifications
   useEffect(() => {
     if ("serviceWorker" in navigator) {
@@ -56,6 +59,12 @@ export default function App() {
       });
     }
   }, []);
+
+  useEffect(() => {
+  dispatch(restoreUserState());
+  dispatch(recoverSession());
+}, [dispatch]);
+
 
   function AdminGuard({ allowedRoles = [], children }) {
     const isAuthenticated = useSelector(selectIsAuthenticated);

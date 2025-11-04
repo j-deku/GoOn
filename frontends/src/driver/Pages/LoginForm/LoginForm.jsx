@@ -8,6 +8,7 @@ import {
   CircularProgress,
   InputAdornment,
   IconButton,
+  Alert,
 } from "@mui/material";
 import { FaEnvelope, FaLock } from "react-icons/fa";
 import { Formik, Form } from "formik";
@@ -104,7 +105,7 @@ const handleSubmit = async (values) => {
       500: 'Server error. Please try later',
     };
     const msg = codeToMsg[status] || fallback;
-    setMessage(msg, {color:"green", fontWeight:"bold"});
+    setMessage(msg, {color:"green", fontWeight:"bold", textAlign:"center"});
     console.error('Login error:', err);
   } finally {
     if (mounted) setIsSubmitting(false);
@@ -192,7 +193,7 @@ const handleSubmit = async (values) => {
                   }}
                 />
               </Box>
-                  {message}
+                  <Alert severity="error">{message}</Alert>
               <Typography variant="body2" sx={{ textAlign: 'center', mb: 2 }}>
                 Forgot password?{' '}
                 <NavLink to="/driver/forgot-password">Reset password</NavLink>

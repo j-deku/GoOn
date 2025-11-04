@@ -296,6 +296,8 @@ export const selectIsOnline = (state) => state.user.isOnline;
 export const selectAuthStatus = (state) => state.user.authStatus;
 export const selectNeedsReauth = (state) => state.user.needsReauth;
 export const selectLastFetchTime = (state) => state.user.lastFetchTime;
+export const selectIsUserLoaded = (state) => Boolean(state.user.user || state.user.lastGoodUser);
+
 
 export const selectShouldRefreshUser = (state) => {
   const lastFetch = state.user.lastFetchTime;

@@ -7,7 +7,7 @@ export function generateCsrfToken(req, res) {
   const token = crypto.randomBytes(24).toString("hex");
   res.cookie("csrfToken", token, {
     secure: process.env.NODE_ENV === "production",
-    sameSite: "Strict",
+    sameSite: "None",
     maxAge: 15 * 60 * 1000, // 15 minutes
   });
   return res.json({ csrfToken: token });

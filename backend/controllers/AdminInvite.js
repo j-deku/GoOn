@@ -1,82 +1,227 @@
 import crypto from "crypto";
-import AdminInvite from "../models/AdminInvite.js";
-import { AdminInviteEmail } from "../utils/EmailTemplates.js";
-import {sendEmail} from "../utils/sendEmail.js";
 import dotenv from "dotenv";
+import { AdminInviteEmail } from "../utils/EmailTemplates.js";
+import { sendEmail } from "../utils/sendEmail.js";
+import prisma from "../config/Db.js";
+import logger from "../middlewares/logger.js";
+import { logActivity } from "../utils/logActivity.js";
+
 dotenv.config();
-// POST /api/admin/invite
+
+// ================================
+// 📩 Invite Admin
+// ================================
+
 export const inviteAdmin = async (req, res) => {
   const { email, roles, name } = req.body;
-  if (!email) return res.status(400).json({ message: "Email required" });
 
-  const token = crypto.randomBytes(32).toString("hex");
-  const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+  if (!email) {
+    return res.status(400).json({ message: "Email required" });
+  }
 
-  // Remove any previous unaccepted invites for this email
-  await AdminInvite.deleteMany({ email: email.toLowerCase(), accepted: false });
+  try {
+    const token = crypto.randomBytes(32).toString("hex");
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24 hours
 
-  await AdminInvite.create({
-    email: email.toLowerCase(),
-    roles: roles && Array.isArray(roles) ? roles : ["admin"],
-    token,
-    expiresAt,
-    createdBy: req.user._id,
-  });
+    // ✅ Remove any previous unaccepted invites for this email
+    await prisma.adminInvite.deleteMany({
+      where: {
+        email: email.toLowerCase(),
+        accepted: false,
+      },
+    });
 
-  const inviteLink = `${process.env.FRONTEND_URL}/admin/accept-invite?token=${token}`;
-  const formattedExpiry = expiresAt.toLocaleString("en-US", { timeZone: "UTC", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    // ✅ Ensure roles are uppercase for Prisma ENUM compatibility
+    const normalizedRoles = (
+      Array.isArray(roles) && roles.length > 0 ? roles : ["ADMIN"]
+    ).map((r) => r.toUpperCase());
 
-  // Compose and send the invite email
-  await sendEmail(
-    email,
-    "TOLI-TOLI Admin Invitation",
-    AdminInviteEmail({
-      name,
-      inviteLink,
-      expiresAt: formattedExpiry
-    })
-  );
+    // ✅ Create the new invite
+    await prisma.adminInvite.create({
+      data: {
+        email: email.toLowerCase(),
+        roles: JSON.stringify(normalizedRoles),
+        token,
+        expiresAt,
+        createdById: req.user.id,
+      },
+    });
 
-  res.json({ success: true, message: "Invite sent" });
+    // ✅ Build the invitation link
+    const inviteLink = `${process.env.FRONTEND_URL}/Oauth2/v1/admin/accept-invite?token=${token}`;
+    const formattedExpiry = expiresAt.toLocaleString("en-US", {
+      timeZone: "UTC",
+      year: "numeric",
+      month: "long",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+
+    // ✅ Send invitation email
+    await sendEmail(
+      email,
+      "GoOn Admin Invitation",
+      AdminInviteEmail({
+        name,
+        inviteLink,
+        expiresAt: formattedExpiry,
+      })
+    );
+
+    // ✅ Log and emit activity
+    const log = await logActivity({
+      userId: req.user.id,
+      role: req.user.roleAssignments.map((r) => r.role).join(", "),
+      action: "Invite Admin",
+      description: `Invited admin with email: ${email}`,
+      req,
+    });
+
+    const io = req.app.get("io");
+    if (io && log) io.emit("new_activity_log", log);
+
+    return res.json({
+      success: true,
+      message: "Invite sent successfully",
+    });
+  } catch (err) {
+    logger.error("InviteAdmin error:", err);
+
+    const log = await logActivity({
+      userId: req.user.id,
+      role: req.user.roleAssignments.map((r) => r.role).join(", "),
+      action: "🟥Invite Admin Failed",
+      description: `Failed to invite admin with email: ${email}. Error: ${err.message}`,
+      req,
+    });
+
+    const io = req.app.get("io");
+    if (io && log) io.emit("new_activity_log", log);
+
+    return res.status(500).json({
+      success: false,
+      message: err.message || "Failed to send invite",
+    });
+  }
 };
-
-// List only the invites *you* created
+// ================================
+// 📋 List Pending Invites (Only Yours)
+// ================================
 export const listPendingInvites = async (req, res) => {
   try {
-    const invites = await AdminInvite.find({
-      accepted: false,
-      createdBy: req.user._id
-    })
-      .select('email roles expiresAt')
-      .sort({ createdAt: -1 });
+    const invites = await prisma.adminInvite.findMany({
+      where: {
+        accepted: false,
+        createdById: req.user.id,
+      },
+      select: {
+        id: true,
+        email: true,
+        roles: true,
+        expiresAt: true,
+        createdAt: true,
+      },
+      orderBy: {
+        createdAt: "desc",
+      },
+    });
 
-    res.json({ success: true, invites });
+    const formattedInvites = invites.map((invite) => ({
+      ...invite,
+      roles: JSON.parse(invite.roles),
+    }));
+
+          const log = await logActivity({
+          userId: req.user.id,
+          role: req.user.roleAssignments.map((r) => r.role).join(", "),
+          action: "📋List Pending Invites",
+          description: `Fetched pending invites`,
+          req,
+        });
+          const io = req.app.get("io");
+        if (io && log) {
+          io.emit("new_activity_log", log);
+        }
+    return res.json({
+      success: true,
+      invites: formattedInvites,
+    });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: 'Unable to fetch invites' });
+    logger.error("ListPendingInvites error:", err);
+          const log = await logActivity({
+          userId: req.user.id,
+          role: req.user.roleAssignments.map((r) => r.role).join(", "),
+          action: "📋List Pending Invites Failed",
+          description: `Failed to fetch pending invites. Error: ${err.message}`,
+          req,
+        });
+          const io = req.app.get("io");
+        if (io && log) {
+          io.emit("new_activity_log", log);
+        }
+    return res.status(500).json({
+      success: false,
+      message: "Unable to fetch invites",
+    });
   }
 };
 
-// Cancel only if *you* created it
+// ================================
+// ❌ Cancel Invite (Only Yours)
+// ================================
 export const cancelInvite = async (req, res) => {
+  const { id } = req.params;
+
   try {
-    const { id } = req.params;
-    const invite = await AdminInvite.findOneAndDelete({
-      _id: id,
-      accepted: false,
-      createdBy: req.user._id
+    const invite = await prisma.adminInvite.findFirst({
+      where: {
+        id: parseInt(id),
+        accepted: false,
+        createdById: req.user.id,
+      },
     });
 
     if (!invite) {
-      // either wrong ID, already accepted, or not yours
-      return res
-        .status(404)
-        .json({ success: false, message: 'Invite not found or you are not authorized' });
+      return res.status(404).json({
+        success: false,
+        message: "Invite not found or not authorized",
+      });
     }
 
-    res.json({ success: true });
+    await prisma.adminInvite.delete({
+      where: { id: invite.id },
+    });
+
+          const log = await logActivity({
+          userId: req.user.id,
+          role: req.user.roleAssignments.map((r) => r.role).join(", "),
+          action: "Cancel Invite",
+          description: `Cancelled invite for email: ${invite.email}`,
+          req,
+        });
+          const io = req.app.get("io");
+        if (io && log) {
+          io.emit("new_activity_log", log);
+        }
+
+    return res.json({ success: true, message: "Invite cancelled" });
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ success: false, message: 'Failed to cancel invite' });
+    logger.error("CancelInvite error:", err);
+          const log = await logActivity({
+          userId: req.user.id,
+          role: req.user.roleAssignments.map((r) => r.role).join(", "),
+          action: "🟥Cancel Invite Failed",
+          description: `Failed to cancel invite for id: ${id} Error: ${err.message}`,
+          req,
+        });
+          const io = req.app.get("io");
+        if (io && log) {
+          io.emit("new_activity_log", log);
+        }
+    return res.status(500).json({
+      success: false,
+      message: "Failed to cancel invite",
+    });
   }
 };

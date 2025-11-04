@@ -27,9 +27,8 @@ import UserSocketProvider from "./Provider/UserSocketProvider";
 import { 
   selectUser, 
   recoverSession,
-  selectIsOnline,
   selectShouldRefreshUser,
-  restoreUserState
+  fetchUserInfo
 } from "../features/user/userSlice";
 import { loadAllAssets } from "./utils/loadImages";
 import NotFound from "../admin/Pages/NotFound/NotFound";
@@ -45,7 +44,6 @@ import SearchAvailable from "./components/SearchAvailable/SearchAvailable";
 export default function UserLayout() {
   const user = useSelector(selectUser);
   const [login, setLogin] = useState(false);
-  const userOnline = useSelector(selectIsOnline);
   const dispatch = useDispatch();
   const [isLoading, setIsLoading] = useState(() => !sessionStorage.getItem("assetsLoaded"));
 
@@ -82,7 +80,7 @@ useEffect(() => {
 }, [dispatch]);
 
 useEffect(() => {
-  dispatch(restoreUserState());
+  dispatch(fetchUserInfo());
 }, [dispatch]);
 
   if (isLoading) {
@@ -94,18 +92,6 @@ useEffect(() => {
       <AuthGuard>
         <UserSocketProvider>
           {user && <NotificationSetup />}
-          {!userOnline && (
-            <div style={{
-              position:"relative",
-              top:"0",
-              left:"0",
-              backgroundColor:"orange",
-              width:"100%",
-              padding:5,
-            }}>
-              <Typography>Not online. Please check your internet connection</Typography>
-            </div>
-          )}
           <div className="app">
             <Routes>
               <Route element={<MainLayout login={login} setLogin={setLogin} />}>
@@ -125,7 +111,7 @@ useEffect(() => {
                 <Route path="/track-ride/:rideId" element={<TrackRide />} />
                 <Route path="/verify-otp" element={<VerifyOTP setLogin={setLogin} />} />
                 <Route path="/forgot-password" element={<ForgotPassword />} />
-                <Route path="/reset-password" element={<PasswordReset />} />
+                <Route path="/reset-password/:token" element={<PasswordReset />} />
                 <Route path="/driveNuser" element={<FirstQuestion />} />
               </Route>
               <Route path="/search" element={<SearchAvailable/>}/>
