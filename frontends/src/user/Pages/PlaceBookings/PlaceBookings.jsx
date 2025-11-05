@@ -3,7 +3,7 @@ import "./PlaceBookings.css";
 import { useSelector } from "react-redux";
 import { toast } from "react-toastify";
 import axiosInstance from "../../../../axiosInstance";
-import { selectIsAuthenticated } from "../../../features/user/userSlice";
+import { selectIsAuthenticated, selectUser } from "../../../features/user/userSlice";
 import { selectCartItems } from "../../../features/cart/cartSlice";
 import { Helmet } from "react-helmet-async";
 import { Button, CircularProgress, Typography } from "@mui/material";
@@ -11,6 +11,7 @@ import { Button, CircularProgress, Typography } from "@mui/material";
 const PlaceBookings = () => {
   const isAuthenticated = useSelector(selectIsAuthenticated);
   const cartItems = useSelector(selectCartItems);
+  const user = useSelector(selectUser);
   const [selectedRides, setSelectedRides] = useState([]);
   const [placing, setPlacing] = useState(false);
   const [data, setData] = useState({
@@ -58,7 +59,7 @@ const PlaceBookings = () => {
 
     // Only send {_id, passengers} to server
     const ridesPayload = selectedRides.map((r) => ({
-      _id: r._id,
+      id: r.id,
       passengers: r.requestedSeats || 1,
     }));
 
@@ -67,6 +68,7 @@ const PlaceBookings = () => {
       const resp = await axiosInstance.post(
         "/api/booking/place",
         {
+          userId: user?.id,
           address: data,
           rides: ridesPayload,
           amount: total,

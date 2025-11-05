@@ -7,15 +7,20 @@ import {
   Alert,
 } from '@mui/material';
 import WarningAmberIcon from '@mui/icons-material/WarningAmber';
+import { FaArrowAltCircleLeft } from 'react-icons/fa';
+import { useNavigate } from 'react-router-dom';
 
 const BullBoard = () => {
   const [loaded, setLoaded] = useState(false);
   const [error, setError] = useState(false);
+  const navigate = useNavigate();
 
   return (
+    <>
     <Box sx={{ p: 4, backgroundColor: '#f5f5f5', minHeight: '100vh' }}>
       <Typography variant="h4" gutterBottom fontWeight="bold">
-        📦 Job Queue Dashboard
+          <FaArrowAltCircleLeft size={40} style={{margin:15, marginBottom:-5, cursor:"pointer"}} onClick={()=>navigate(-1)}/>
+  📦 Job Queue Dashboard
       </Typography>
       <Typography variant="subtitle1" color="text.secondary" gutterBottom>
         Monitor and manage your job queues via BullMQ.
@@ -71,6 +76,7 @@ const BullBoard = () => {
         />
       </Paper>
     </Box>
+    </>
   );
 };
 

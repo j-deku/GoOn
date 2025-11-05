@@ -1,6 +1,6 @@
 .list-drivers {
     padding: 20px;
-    max-width:90%;
+    max-width:80%;
     margin: 0;
     overflow-x: scroll;
   }  
@@ -50,4 +50,23 @@ span.approved-label{
   background-color: transparent;
   padding: 10px;
   color: rgb(124, 212, 124);
+}
+
+@media (max-width:768px) {
+  .list-drivers {
+    position: fixed;
+    padding: 10px;
+    max-width:90%;
+    overflow-x: scroll;
+  }
+  .drivers-table th,
+  .drivers-table td {
+    width: auto;
+    padding: 8px;
+    font-size: 14px;
+  }
+  .driver-avatar {
+    width: 40px;
+    height: 40px;
+  }
 }

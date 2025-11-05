@@ -18,6 +18,9 @@ import dayjs from 'dayjs';
 import isSameOrAfter from 'dayjs/plugin/isSameOrAfter'; 
 import utc from 'dayjs/plugin/utc'; 
 import axiosInstanceAdmin from '../../../../../../axiosInstanceAdmin';
+import { Helmet } from 'react-helmet-async';
+import { FaArrowCircleLeft, FaBackward } from 'react-icons/fa';
+import { useNavigate } from 'react-router-dom';
 
 dayjs.extend(isSameOrAfter);
 dayjs.extend(utc); 
@@ -35,6 +38,7 @@ const AdminPushForm = () => {
   const [preview, setPreview] = useState(false);
   const [loading, setLoading] = useState(false); 
   const [errors, setErrors] = useState({}); 
+  const navigate = useNavigate();
 
   const handleChange = useCallback((e) => {
     const { name, value } = e.target;
@@ -142,6 +146,12 @@ const AdminPushForm = () => {
   }, [preview, form]); 
 
   return (
+    <>
+    <Helmet>
+      <title>Admin - Global Push Notification</title>
+      <meta name="description" content="Admin panel for managing global push notifications." />
+    </Helmet>
+    <FaArrowCircleLeft size={40} style={{margin:10, cursor:"pointer"}} onClick={()=>navigate(-1)}/>
     <Box maxWidth="md" mx="auto" p={3}>
       <Card elevation={4}> 
         <CardHeader title="Global Push Notification Management" />
@@ -231,6 +241,7 @@ const AdminPushForm = () => {
         </CardContent>
       </Card>
     </Box>
+    </>
   );
 };
 

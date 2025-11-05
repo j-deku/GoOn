@@ -193,7 +193,11 @@ const handleSubmit = async (values) => {
                   }}
                 />
               </Box>
-                  <Alert severity="error">{message}</Alert>
+                  {message && (
+                <Alert severity="error" sx={{ mb: 2 }}>
+                  {message}
+                </Alert>
+              )}
               <Typography variant="body2" sx={{ textAlign: 'center', mb: 2 }}>
                 Forgot password?{' '}
                 <NavLink to="/driver/forgot-password">Reset password</NavLink>

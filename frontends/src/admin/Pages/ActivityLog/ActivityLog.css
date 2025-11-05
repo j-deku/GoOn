@@ -1,0 +1,14 @@
+.activity-log-container{
+    padding: 20px;
+    width: 100%;
+    overflow-x: auto;
+}
+
+@media (max-width:768px) {
+    .activity-log-container{
+      position: relative;
+      width: 100%;
+      padding: 10px;
+      overflow-x: auto;
+    }
+}

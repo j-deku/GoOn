@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './BookSidebar.css';
 import { FaBus, FaCar, FaMotorcycle } from 'react-icons/fa';
-import axios from 'axios';
+import axiosInstance from '../../../../axiosInstance';
 
 const BookSideBar = ({ onFilterChange }) => {
   const [selectedFilter, setSelectedFilter] = useState("all");
@@ -16,7 +16,7 @@ const BookSideBar = ({ onFilterChange }) => {
   const fetchCounts = async () => {
     try {
       // Optionally, you can pass search parameters if needed
-      const response = await axios.get(`/api/rides/rideCounts`);
+      const response = await axiosInstance.get(`/api/rides/rideCounts`);
       if (response.data.success) {
         const countsArray = response.data.counts; // Expected format: [{ _id: "motorcycle", count: 15 }, ...]
         // Initialize counts object

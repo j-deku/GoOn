@@ -50,3 +50,10 @@
     padding: 4px;
   }
   
+  @media (max-width:768px) {
+    .assign-ride-container{
+      position: fixed;
+      width: 90%;
+      padding: 10px;
+    }
+  }

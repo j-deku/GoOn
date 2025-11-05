@@ -140,7 +140,7 @@ if (!pickupNorm || !destNorm || !searchDate) return;
    const handleFull = ({ rideId }) => {
      setRides((prev) =>
        prev.map((r) =>
-         r._id === rideId ? { ...r, isFull: true } : r
+         r.id === rideId ? { ...r, isFull: true } : r
        )
      );
      // optional toast:
@@ -171,7 +171,7 @@ if (!pickupNorm || !destNorm || !searchDate) return;
       };
       fetchRouteInfo(serviceMap, origin, destination)
         .then((info) =>
-          setRouteInfo((prev) => ({ ...prev, [ride._id]: info }))
+          setRouteInfo((prev) => ({ ...prev, [ride.id]: info }))
         )
         .catch(() => {});
     });
@@ -242,12 +242,12 @@ if (!pickupNorm || !destNorm || !searchDate) return;
       </Typography>
       <Grid container spacing={2}>
         {rides.map((ride) => {
-          const info = routeInfo[ride._id] || {};
+          const info = routeInfo[ride.id] || {};
           const endTime = ride.duration
             ? calculateEndTime(ride.selectedTime, ride.duration)
             : ride.selectedTime;
           return (
-            <Grid item xs={12} md={6} lg={20} key={ride._id}>
+            <Grid item xs={12} md={6} lg={20} key={ride.id}>
               <Box className="ride-card">
                 <Box display="flex" justifyContent="space-between" mb={1}>
                       {ride.isFull ? (

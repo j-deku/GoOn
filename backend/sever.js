@@ -138,7 +138,7 @@ app.use(
         connectSrc: ["'self'", process.env.BACKEND_URL, 
          // /\.ngrok-free\.app$/
            ],
-        frameAncestors: ["'none'"],
+       // frameAncestors: ["'none'"],
         objectSrc: ["'none'"],
         baseUri: ["'self'"],
         formAction: ["'self'"],
@@ -180,11 +180,34 @@ app.use("/api/auth", userRouter);
 app.use("/api/chat", BotRouter);
 app.use("/api/connection", connectionRoute);
 app.use("/api/debug", debugRouter);
-try {
-  app.use("/api/admin/queues", verifyAdmin, BullBoardAdapter.getRouter());
-} catch (err) {
-  console.warn("⚠️ BullBoard disabled due to Redis INFO restrictions:", err.message);
-}
+// ---- BullBoard Safe Mount ----
+// Create a mini express router for BullBoard
+const bullBoardRouter = express.Router();
+
+// 🧠 Step 1: Disable helmet frame blocking only here
+bullBoardRouter.use(
+  helmet({
+    frameguard: false, // ✅ Disable X-Frame-Options
+    contentSecurityPolicy: false, // ✅ Disable global CSP here
+  })
+);
+
+// 🧠 Step 2: Add custom headers that ALLOW iframe embedding
+bullBoardRouter.use((req, res, next) => {
+  res.removeHeader("X-Frame-Options");
+  res.removeHeader("Content-Security-Policy");
+  res.setHeader("X-Frame-Options", "ALLOWALL");
+  // For more security, you can replace '*' with your React app URL
+  res.setHeader("Content-Security-Policy", `frame-ancestors 'self' ${process.env.FRONTEND_URL}`);
+  next();
+});
+
+// 🧠 Step 3: Mount BullBoard router
+bullBoardRouter.use("/", BullBoardAdapter.getRouter());
+
+// 🧠 Step 4: Use it in your main app
+app.use("/api/admin/queues", bullBoardRouter);
+
 app.use("/api", TestPushRouter);
 
 app.get("*", (req, res, next) => {

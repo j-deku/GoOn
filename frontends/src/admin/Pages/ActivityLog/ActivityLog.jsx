@@ -22,6 +22,7 @@ import {
   IconButton,
 } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
+import "./ActivityLog.css";
 
 const socket = io(import.meta.env.VITE_BACKEND_URL, { withCredentials: true });
 
@@ -119,7 +120,7 @@ const ActivityLog = () => {
   };
 
   return (
-    <Box p={2}>
+    <Box p={2} className="activity-log-container">
       <Typography variant="h5" gutterBottom>
         Admin Activity Logs
       </Typography>

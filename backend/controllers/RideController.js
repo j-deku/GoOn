@@ -122,9 +122,9 @@ export const getRideCounts = async (req, res) => {
     const { pickup, destination, selectedDate, passengers } = req.query;
     const where = {};
 
-    if (pickup) where.pickupNorm = { contains: stripAccents(pickup)};
+    if (pickup) where.pickupNorm = { contains: stripAccents(pickup) };
     if (destination)
-      where.destinationNorm = { contains: stripAccents(destination)};
+      where.destinationNorm = { contains: stripAccents(destination) };
     if (selectedDate) {
       const d = new Date(selectedDate);
       const start = new Date(d.setHours(0, 0, 0, 0));
@@ -136,10 +136,16 @@ export const getRideCounts = async (req, res) => {
     const counts = await prisma.ride.groupBy({
       by: ["type"],
       where,
-      _count: true,
+      _count: { _all: true },
     });
 
-    res.status(200).json({ success: true, counts });
+    // ✅ normalize the output for frontend compatibility
+    const formatted = counts.map((item) => ({
+      _id: item.type,
+      count: item._count._all,
+    }));
+
+    res.status(200).json({ success: true, counts: formatted });
   } catch (error) {
     console.error("Error in getRideCounts:", error);
     res.status(500).json({ success: false, message: "Server error" });

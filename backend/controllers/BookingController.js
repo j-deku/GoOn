@@ -13,16 +13,32 @@ export const placeBookings = async (req, res) => {
   const frontend_url = process.env.FRONTEND_URL || "http://localhost:5173";
   const { userId, rides: requestedRides, amount, address, email, currency = "USD" } = req.body;
 
+  console.log("📦 Incoming booking payload:", JSON.stringify(req.body, null, 2));
+
   if (!userId || !Array.isArray(requestedRides) || requestedRides.length === 0 || !amount || !address || !email) {
     return res.status(400).json({ success: false, message: "Missing required fields" });
   }
 
   try {
     // 1) Fetch all ride data
-    const rideIds = requestedRides.map(r => Number(r.id || r._id));
+   const rideIds = requestedRides
+  .map(r => {
+    const raw = r.id || r._id;
+    return /^\d+$/.test(raw) ? Number(raw) : null;
+  })
+  .filter(Boolean);
+
+    if (!rideIds.length) {
+      return res.status(400).json({
+      success: false,
+      message: "Invalid or missing ride IDs — ensure ride IDs are numeric and included in request.",
+    });
+    }
+
     const masterRides = await prisma.ride.findMany({
       where: { id: { in: rideIds } },
     });
+
 
     // 2) Validate and build booking rides
     const bookingRides = requestedRides.map((r) => {
