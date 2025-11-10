@@ -27,7 +27,7 @@
 - OTP-based registration and login.
 - Responsive design for mobile, tablet, and desktop.
 
-### 👨‍✈️ Driver Dashboard
+### 👨‍✈️Driver Dashboard
 - View assigned rides.
 - Approve or reject bookings.
 - Track current and upcoming rides.
